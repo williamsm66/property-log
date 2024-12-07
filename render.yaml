@@ -15,7 +15,10 @@ services:
           property: connectionString
     packages:
       - tesseract-ocr
+      - tesseract-ocr-eng
       - libreoffice
+      - poppler-utils
+      - ghostscript
 
 databases:
   - name: property-log-db
