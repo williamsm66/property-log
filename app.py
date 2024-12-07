@@ -704,7 +704,7 @@ def delete_property(property_id):
 
 @app.route('/api/properties/<int:property_id>', methods=['PUT'])
 def update_property(property_id):
-    if request.method == 'POST':
+    try:
         data = request.get_json()
         property = Property.query.get_or_404(property_id)
         
@@ -746,19 +746,21 @@ def update_property(property_id):
         property.viewing_date_3 = datetime.fromisoformat(data['viewing_date_3'].replace('Z', '+00:00')) if data.get('viewing_date_3') else None
         property.viewing_date_4 = datetime.fromisoformat(data['viewing_date_4'].replace('Z', '+00:00')) if data.get('viewing_date_4') else None
         
-        # Handle boolean fields
-        property.is_auction = data.get('is_auction')
-        property.legal_pack_available = data.get('legal_pack_available')
-        
-        # Handle key_features - convert list to JSON string
-        key_features = data.get('key_features', [])
-        if isinstance(key_features, list):
-            property.key_features = json.dumps(key_features)
-        elif key_features is None:
-            property.key_features = json.dumps([])
+        # Update calculated fields
+        property.stamp_duty = data.get('stamp_duty')
+        property.total_purchase_fees = data.get('total_purchase_fees')
+        property.total_money_needed = data.get('total_money_needed')
+        property.cash_left_in_deal = data.get('cash_left_in_deal')
+        property.annual_profit = data.get('annual_profit')
+        property.total_roi = data.get('total_roi')
+        property.total_yield = data.get('total_yield')
         
         db.session.commit()
-        return jsonify(property.to_dict())
+        return jsonify(property.to_dict()), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/properties/<int:property_id>/duplicate', methods=['POST'])
 def duplicate_property(property_id):
