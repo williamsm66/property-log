@@ -54,7 +54,8 @@ def check_system_dependencies():
         logger.info(f"Tesseract path: {result.stdout.strip() if result.returncode == 0 else 'Not found'}")
         if result.returncode == 0:
             version = subprocess.run(['tesseract', '--version'], capture_output=True, text=True)
-            logger.info(f"Tesseract version: {version.stdout.split(r'\n')[0] if version.returncode == 0 else 'Unknown'}")
+            version_text = version.stdout.split('\n')[0] if version.returncode == 0 else 'Unknown'
+            logger.info(f"Tesseract version: {version_text}")
     except Exception as e:
         logger.error(f"Error checking tesseract: {str(e)}")
     
