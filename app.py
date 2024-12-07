@@ -261,77 +261,77 @@ def init_db():
 # Initialize database before running the app
 init_db()
 
-def extract_text_from_pdf(pdf_path):
-    """Extract text content from a PDF file using both PyPDF2 and OCR if needed."""
+def is_render_environment():
+    """Check if we're running on Render"""
+    return os.environ.get('RENDER') == 'true'
+
+def process_document(file_path):
+    """Process a single document and return its text content."""
+    logger = logging.getLogger(__name__)
+    
+    if not os.path.exists(file_path):
+        logger.error(f"File not found: {file_path}")
+        return None
+        
+    file_ext = os.path.splitext(file_path)[1].lower()
+    
     try:
-        logger.info(f"Attempting to extract text from PDF: {pdf_path}")
-        text = ""
-        
-        # First try PyPDF2
-        with open(pdf_path, 'rb') as file:
-            try:
-                reader = PyPDF2.PdfReader(file)
-                logger.info(f"Successfully created PDF reader. Number of pages: {len(reader.pages)}")
-                
-                for i, page in enumerate(reader.pages):
-                    logger.info(f"Processing page {i+1}")
-                    try:
-                        page_text = page.extract_text()
-                        
-                        # If page has less than 100 characters or contains mostly whitespace,
-                        # it might be scanned/image-based
-                        if len(page_text.strip()) < 100 or len(page_text.strip()) / len(page_text) < 0.3:
-                            logger.info(f"Page {i+1} appears to be scanned, attempting OCR")
-                            # Convert PDF page to image with higher DPI for better OCR
-                            images = convert_from_path(pdf_path, first_page=i+1, last_page=i+1, dpi=300)
-                            if images:
-                                # Perform OCR on the image with improved settings
-                                page_text = pytesseract.image_to_string(
-                                    images[0],
-                                    config='--psm 1 --oem 3'  # Automatic page segmentation with LSTM OCR
-                                )
-                                logger.info(f"OCR completed for page {i+1}")
-                        
-                        text += page_text + '\n'
-                        logger.info(f"Successfully processed page {i+1}. Text length: {len(page_text)}")
-                    except Exception as e:
-                        logger.error(f"Error processing page {i+1}: {str(e)}")
-                        # Try OCR as fallback for failed pages
-                        try:
-                            images = convert_from_path(pdf_path, first_page=i+1, last_page=i+1, dpi=300)
-                            if images:
-                                page_text = pytesseract.image_to_string(
-                                    images[0],
-                                    config='--psm 1 --oem 3'
-                                )
-                                text += page_text + '\n'
-                                logger.info(f"Successfully recovered page {i+1} using OCR")
-                        except Exception as ocr_e:
-                            logger.error(f"OCR recovery failed for page {i+1}: {str(ocr_e)}")
-            except Exception as e:
-                logger.error(f"PyPDF2 failed, attempting full document OCR: {str(e)}")
-                # If PyPDF2 fails completely, try converting the entire document
+        if file_ext == '.pdf':
+            return extract_text_from_pdf(file_path)
+        elif file_ext in ['.doc', '.docx']:
+            if is_render_environment():
+                # On Render, just extract text directly from Word documents
+                logger.info("Running on Render - attempting direct text extraction from Word document")
                 try:
-                    images = convert_from_path(pdf_path, dpi=300)
-                    for i, image in enumerate(images):
-                        page_text = pytesseract.image_to_string(
-                            image,
-                            config='--psm 1 --oem 3'
-                        )
-                        text += page_text + '\n'
-                        logger.info(f"Successfully processed page {i+1} with OCR")
-                except Exception as ocr_e:
-                    logger.error(f"Full document OCR failed: {str(ocr_e)}")
+                    doc = Document(file_path)
+                    return "\n".join([paragraph.text for paragraph in doc.paragraphs])
+                except Exception as e:
+                    logger.error(f"Error extracting text from Word document: {str(e)}")
                     return None
-        
-        if not text.strip():
-            logger.warning(f"No text content extracted from {pdf_path}")
+            else:
+                # On local environment, try conversion
+                return convert_and_process_doc(file_path)
+        else:
+            logger.error(f"Unsupported file type: {file_ext}")
             return None
             
-        logger.info(f"Successfully extracted text from all pages. Total text length: {len(text)}")
-        return text
     except Exception as e:
-        logger.error(f"Error processing PDF {pdf_path}: {str(e)}")
+        logger.error(f"Error processing document {file_path}: {str(e)}")
+        return None
+
+def extract_text_from_pdf(pdf_path):
+    """Extract text from PDF with fallback for Render environment"""
+    logger = logging.getLogger(__name__)
+    logger.info(f"Attempting to extract text from PDF: {pdf_path}")
+    
+    try:
+        # Try PyPDF2 first
+        reader = PyPDF2.PdfReader(pdf_path)
+        logger.info(f"Successfully created PDF reader. Number of pages: {len(reader.pages)}")
+        
+        text = ""
+        for i, page in enumerate(reader.pages):
+            logger.info(f"Processing page {i+1}")
+            page_text = page.extract_text()
+            
+            if not page_text.strip() and not is_render_environment():
+                # Only attempt OCR in non-Render environment
+                logger.info(f"Page {i+1} appears to be scanned, attempting OCR")
+                try:
+                    page_text = perform_ocr_on_page(pdf_path, i)
+                except Exception as e:
+                    logger.warning(f"OCR failed for page {i+1}, skipping: {str(e)}")
+            
+            if page_text:
+                text += page_text + "\n"
+                logger.info(f"Successfully processed page {i+1}. Text length: {len(page_text)}")
+            else:
+                logger.warning(f"No text extracted from page {i+1}")
+        
+        return text.strip()
+        
+    except Exception as e:
+        logger.error(f"Error extracting text from PDF: {str(e)}")
         return None
 
 def process_zip_file(zip_file_path):
@@ -394,60 +394,6 @@ def process_zip_file(zip_file_path):
     
     return processed_files, failed_files, "\n".join(processing_summary)
 
-def process_document(file_path):
-    """Process a single document and return its text content."""
-    try:
-        _, ext = os.path.splitext(file_path.lower())
-        
-        if ext == '.pdf':
-            return extract_text_from_pdf(file_path)
-        elif ext == '.docx':
-            try:
-                doc = Document(file_path)
-                return '\n'.join([paragraph.text for paragraph in doc.paragraphs])
-            except Exception as e:
-                logger.error(f"Error processing DOCX file {file_path}: {str(e)}")
-                return None
-        elif ext == '.doc':
-            logger.warning(f"Old .doc format detected for {file_path}. Converting to PDF first...")
-            try:
-                # Convert .doc to PDF using LibreOffice (if available)
-                pdf_path = file_path + '.pdf'
-                result = subprocess.run(['soffice', '--headless', '--convert-to', 'pdf', '--outdir', 
-                                      os.path.dirname(file_path), file_path], 
-                                     capture_output=True, text=True)
-                if os.path.exists(pdf_path):
-                    text = extract_text_from_pdf(pdf_path)
-                    os.remove(pdf_path)  # Clean up temporary PDF
-                    return text
-                else:
-                    logger.error(f"Failed to convert .doc to PDF: {result.stderr}")
-                    return None
-            except Exception as e:
-                logger.error(f"Error converting .doc file {file_path}: {str(e)}")
-                return None
-        elif ext == '.txt':
-            try:
-                with open(file_path, 'r', encoding='utf-8') as file:
-                    return file.read()
-            except UnicodeDecodeError:
-                # Try different encodings if utf-8 fails
-                encodings = ['latin-1', 'cp1252', 'iso-8859-1']
-                for encoding in encodings:
-                    try:
-                        with open(file_path, 'r', encoding=encoding) as file:
-                            return file.read()
-                    except UnicodeDecodeError:
-                        continue
-                logger.error(f"Could not decode file {file_path} with any known encoding")
-                return None
-        else:
-            logger.warning(f"Unsupported file type: {ext} for file {file_path}")
-            return None
-    except Exception as e:
-        logger.error(f"Error processing file {file_path}: {str(e)}")
-        return None
-
 def save_documents(session_id, processed_files, initial_analysis=None, qa_history=None):
     """Save documents and analysis history to disk."""
     try:
@@ -490,7 +436,7 @@ def load_documents(session_id):
 
 def analyze_with_claude(documents_content, processing_summary=None, follow_up_question=None, initial_analysis=None, qa_history=None):
     try:
-        client = anthropic.Anthropic(api_key=os.getenv('CLAUDE_API_KEY'))
+        client = anthropic.Client(api_key=os.getenv('CLAUDE_API_KEY'))
         
         # Prepare the system prompt
         system_prompt = """You are a legal expert analyzing property documents. Focus on:
@@ -511,19 +457,17 @@ Provide a clear, concise summary highlighting any red flags."""
             if qa_history:
                 user_message += f"\n\nPrevious Q&A:\n{qa_history}"
 
-        # Create the completion using the messages API format for v0.7.8
-        response = client.messages.create(
-            model="claude-3-opus-20240229",
-            max_tokens=4000,
+        # Create the completion using the appropriate API version
+        response = client.completion(
+            prompt=f"{system_prompt}\n\nHuman: {user_message}\n\nAssistant:",
+            model="claude-2",
+            max_tokens_to_sample=4000,
             temperature=0,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message}
-            ]
+            stop_sequences=["\n\nHuman:"]
         )
 
         # Extract the response
-        analysis = response.content[0].text
+        analysis = response.completion
 
         app.logger.info(f"Successfully got analysis from Claude API")
         return analysis
