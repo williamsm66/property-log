@@ -9,8 +9,9 @@ services:
       sudo ./install_packages.sh || ./install_packages.sh
       pip install -r requirements.txt
     startCommand: |
-      # Ensure PATH includes system binaries
+      # Ensure PATH and environment variables are set
       export PATH="/usr/local/bin:$PATH"
+      export TESSDATA_PREFIX="/usr/local/share/tessdata"
       gunicorn app:app
     envVars:
       - key: PYTHON_VERSION
@@ -23,6 +24,14 @@ services:
           property: connectionString
       - key: PATH
         value: /usr/local/bin:/usr/bin:/bin:$PATH
+      - key: TESSDATA_PREFIX
+        value: /usr/local/share/tessdata
+    buildFilter:
+      paths:
+        - install_packages.sh
+        - requirements.txt
+        - app.py
+    buildTTL: 30m
 
 databases:
   - name: property-log-db

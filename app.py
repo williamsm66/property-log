@@ -44,6 +44,12 @@ WSGIRequestHandler.protocol_version = "HTTP/1.1"
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
 
+# Configure Tesseract path
+pytesseract.pytesseract.tesseract_cmd = '/usr/local/bin/tesseract'
+
+# Set Tesseract configuration
+os.environ['TESSDATA_PREFIX'] = '/usr/local/share/tessdata'
+
 def check_system_dependencies():
     """Check and log system dependencies."""
     logger = logging.getLogger(__name__)
