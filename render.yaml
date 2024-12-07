@@ -7,12 +7,15 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.9.12
-      - key: ANTHROPIC_API_KEY
+      - key: CLAUDE_API_KEY
         sync: false
       - key: DATABASE_URL
         fromDatabase:
           name: property-log-db
           property: connectionString
+    packages:
+      - tesseract-ocr
+      - libreoffice
 
 databases:
   - name: property-log-db
