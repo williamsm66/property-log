@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Legal Document Analyzer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .loading {
+            display: none;
+        }
+        .loading.active {
+            display: flex;
+        }
+        .error {
+            display: none;
+        }
+        .error.active {
+            display: block;
+        }
+        
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            line-height: 1.5;
+            margin: 0;
+            padding: 2rem;
+            background-color: #f9fafb;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        .status-section {
+            margin-top: 2rem;
+            padding: 1.5rem;
+            background-color: white;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        
+        .status-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: #1f2937;
+        }
+        
+        .status-category {
+            margin-bottom: 1rem;
+            padding: 1rem;
+            border-radius: 0.375rem;
+            background-color: #f3f4f6;
+        }
+        
+        .status-list {
+            margin: 0.5rem 0 0 1.5rem;
+            padding: 0;
+        }
+        
+        .status-list li {
+            margin: 0.25rem 0;
+            font-size: 0.875rem;
+        }
+        
+        .token-info {
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-top: 1rem;
+            font-family: ui-monospace, monospace;
+            font-size: 0.875rem;
+        }
+        
+        .token-info pre {
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-4xl">
+        <div class="mb-6">
+            <a href="/property/{{ property_id }}" class="inline-flex items-center px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white font-medium rounded-lg">
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                </svg>
+                Back to Property
+            </a>
+        </div>
+        
+        <h1 class="text-3xl font-bold text-center mb-8 text-gray-800">Legal Document Analyzer</h1>
+        
+        <!-- Previous Analysis Section -->
+        {% if property.legal_pack_analysis %}
+        <div class="mb-8 bg-white rounded-lg shadow-md p-6">
+            <h3 class="text-xl font-bold mb-4">Analysis</h3>
+            <div class="prose max-w-none text-gray-700 whitespace-pre-wrap break-words mb-8">
+                {{ property.legal_pack_analysis | safe }}
+            </div>
+            
+            {% if property.legal_pack_qa_history %}
+            <div class="mt-6">
+                <h4 class="text-lg font-bold mb-3">Previous Questions & Answers</h4>
+                <div class="space-y-4">
+                    {% for qa in property.legal_pack_qa_history|json_loads %}
+                    <div class="bg-gray-50 p-4 rounded-lg">
+                        <p class="font-medium mb-2">Q: {{ qa.question }}</p>
+                        <div class="prose max-w-none text-gray-700 whitespace-pre-wrap">{{ qa.answer }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- Upload Form -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <form id="uploadForm" class="mb-6 space-y-4">
+                <input type="hidden" id="propertyId" value="{{ property_id }}">
+                <div>
+                    <label for="file" class="block text-sm font-medium text-gray-700">Upload ZIP file containing legal documents</label>
+                    <input type="file" id="file" name="file" accept=".zip" class="mt-1 block w-full" required>
+                </div>
+                <button type="submit" id="analyzeBtn" class="w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                    Analyze Documents
+                </button>
+            </form>
+
+            <!-- Loading Spinner -->
+            <div id="loading" class="loading items-center justify-center space-x-2 mb-4">
+                <div class="w-4 h-4 bg-blue-500 rounded-full animate-pulse"></div>
+                <div class="w-4 h-4 bg-blue-500 rounded-full animate-pulse delay-75"></div>
+                <div class="w-4 h-4 bg-blue-500 rounded-full animate-pulse delay-150"></div>
+                <span class="text-gray-600">Processing documents... This may take several minutes.</span>
+            </div>
+
+            <!-- Error Display -->
+            <div id="errorMessage" class="hidden bg-red-50 border-l-4 border-red-500 p-4 mb-4">
+                <div class="flex">
+                    <div class="flex-shrink-0">
+                        <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                        </svg>
+                    </div>
+                    <div class="ml-3">
+                        <p class="text-sm text-red-700" id="errorText"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Results Section -->
+            <div id="results" class="space-y-6">
+            </div>
+            
+            <!-- Token Usage Info -->
+            <div id="tokenUsageInfo" class="hidden token-info">
+                <h5 class="text-lg font-semibold mb-2">Document Processing Details</h5>
+                <pre id="tokenUsageContent" class="text-sm text-gray-600"></pre>
+            </div>
+        </div>
+        
+        <!-- Follow-up Questions -->
+        <div id="followupSection" class="{% if property.legal_pack_analysis %}block{% else %}hidden{% endif %} mt-8 bg-white rounded-lg shadow-md p-6">
+            <h3 class="text-xl font-bold mb-4">Ask a Follow-up Question</h3>
+            <form id="followupForm" class="space-y-4">
+                <div>
+                    <textarea id="question" name="question" rows="3" 
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Type your question here..."></textarea>
+                </div>
+                <button type="submit" class="w-full bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
+                    Ask Question
+                </button>
+            </form>
+            
+            <!-- Follow-up Loading -->
+            <div id="followupLoading" class="hidden flex items-center justify-center space-x-2 mt-4">
+                <div class="w-4 h-4 bg-green-500 rounded-full animate-pulse"></div>
+                <div class="w-4 h-4 bg-green-500 rounded-full animate-pulse delay-75"></div>
+                <div class="w-4 h-4 bg-green-500 rounded-full animate-pulse delay-150"></div>
+                <span class="text-gray-600">Processing your question...</span>
+            </div>
+            
+            <!-- Follow-up Results -->
+            <div id="followupResults" class="mt-6 space-y-4"></div>
+        </div>
+    </div>
+
+    <script>
+        let currentSessionId = '{{ property.legal_pack_session_id if property and property.legal_pack_session_id else "" }}';
+        
+        // Enable/disable analyze button based on file selection
+        document.getElementById('file').addEventListener('change', function(e) {
+            const analyzeBtn = document.getElementById('analyzeBtn');
+            analyzeBtn.disabled = !e.target.files[0] || !e.target.files[0].name.toLowerCase().endsWith('.zip');
+        });
+        
+        function showLoadingSpinner() {
+            document.getElementById('loading').classList.add('active');
+        }
+        
+        function hideLoadingSpinner() {
+            document.getElementById('loading').classList.remove('active');
+        }
+        
+        function showFollowUpLoading() {
+            document.getElementById('followupLoading').classList.remove('hidden');
+        }
+        
+        function hideFollowUpLoading() {
+            document.getElementById('followupLoading').classList.add('hidden');
+        }
+        
+        function displayErrorMessage(message, suggestion) {
+            const errorDiv = document.getElementById('errorMessage');
+            const errorText = document.getElementById('errorText');
+            errorText.textContent = message + (suggestion ? `. ${suggestion}` : '');
+            errorDiv.classList.remove('hidden');
+        }
+        
+        function clearError() {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.classList.add('hidden');
+            document.getElementById('errorText').textContent = '';
+        }
+        
+        function displayTokenUsage(tokenUsage) {
+            console.log('Token usage data:', tokenUsage); // Debug log
+            
+            const tokenDetailsDiv = document.getElementById('token-details');
+            const processingSection = document.getElementById('processing-summary');
+            if (!tokenDetailsDiv || !processingSection) {
+                console.error('Required elements not found:', {
+                    tokenDetailsDiv: !!tokenDetailsDiv,
+                    processingSection: !!processingSection
+                });
+                return;
+            }
+
+            let tokenHtml = '';
+            
+            // Display per-document token counts
+            if (tokenUsage.documents && tokenUsage.documents.length > 0) {
+                tokenHtml += '<div class="mb-4">';
+                tokenHtml += '<h6 class="font-semibold mb-2 text-blue-800">Per Document Token Usage:</h6>';
+                tokenHtml += '<ul class="list-disc pl-5 space-y-2">';
+                tokenUsage.documents.forEach(doc => {
+                    tokenHtml += `<li class="text-gray-700"><span class="font-medium">${escapeHtml(doc.name)}:</span> ${doc.tokens.toLocaleString()} tokens</li>`;
+                });
+                tokenHtml += '</ul></div>';
+            }
+
+            // Display total token usage
+            if (tokenUsage.total_tokens) {
+                tokenHtml += '<div class="mt-4 pt-4 border-t border-blue-200">';
+                tokenHtml += '<h6 class="font-semibold mb-2 text-blue-800">Total Token Usage:</h6>';
+                tokenHtml += `<p class="text-gray-700 font-medium">${tokenUsage.total_tokens.toLocaleString()} tokens</p>`;
+                tokenHtml += '</div>';
+            }
+
+            console.log('Generated token HTML:', tokenHtml); // Debug log
+            tokenDetailsDiv.innerHTML = tokenHtml;
+            processingSection.classList.remove('hidden');
+            console.log('Processing section visibility:', processingSection.classList.contains('hidden')); // Debug log
+        }
+
+        function displayProcessingSummary(summary) {
+            console.log('Processing summary data:', summary); // Debug log
+            
+            const statusList = document.getElementById('file-status-list');
+            const processingSection = document.getElementById('processing-summary');
+            if (!statusList || !processingSection) {
+                console.error('Required elements not found:', {
+                    statusList: !!statusList,
+                    processingSection: !!processingSection
+                });
+                return;
+            }
+
+            let html = '';
+            
+            // Parse the summary string if needed
+            const lines = typeof summary === 'string' ? summary.split('\n') : [];
+            const successfulFiles = lines.filter(line => line.startsWith('Successfully processed')).map(line => {
+                const match = line.match(/Successfully processed (.*?) \((\d+) tokens\)/);
+                return match ? { name: match[1], tokens: parseInt(match[2]) } : null;
+            }).filter(Boolean);
+            
+            console.log('Parsed successful files:', successfulFiles); // Debug log
+            
+            // Display successful files
+            if (successfulFiles.length > 0) {
+                html += '<div class="mb-4">';
+                html += '<h6 class="font-semibold text-green-700 mb-2">Successfully Processed Files:</h6>';
+                html += '<ul class="list-disc pl-5 space-y-1">';
+                successfulFiles.forEach(file => {
+                    html += `<li class="text-gray-700">${escapeHtml(file.name)} (${file.tokens.toLocaleString()} tokens)</li>`;
+                });
+                html += '</ul></div>';
+            }
+
+            console.log('Generated summary HTML:', html); // Debug log
+            statusList.innerHTML = html;
+            processingSection.classList.remove('hidden');
+            console.log('Processing section visibility:', processingSection.classList.contains('hidden')); // Debug log
+        }
+
+        async function analyzeLegalPack(e) {
+            e.preventDefault();
+            const fileInput = document.getElementById('file');
+            const propertyId = document.getElementById('propertyId').value;
+
+            if (!fileInput.files[0]) {
+                displayErrorMessage('Please select a file first');
+                return;
+            }
+            
+            clearError();
+            showLoadingSpinner();
+            
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('property_id', propertyId);
+            
+            try {
+                const response = await fetch('/analyze-legal-pack', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                console.log('Response data:', data); // Debug log
+                
+                if (data.error) {
+                    displayErrorMessage(data.error, data.suggestion);
+                    if (data.processing_summary) {
+                        displayProcessingSummary(data.processing_summary);
+                    }
+                } else {
+                    currentSessionId = data.session_id;
+                    
+                    // Show the follow-up section
+                    const followupSection = document.getElementById('followupSection');
+                    if (followupSection) {
+                        followupSection.classList.remove('hidden');
+                    }
+                    
+                    // Update the analysis section without full page reload
+                    const analysisSection = document.querySelector('.prose.max-w-none');
+                    if (analysisSection) {
+                        analysisSection.innerHTML = data.analysis;
+
+                        // Create container for analysis results and summaries
+                        const resultsContainer = document.createElement('div');
+                        resultsContainer.className = 'space-y-6 mt-8';
+                        
+                        // Add the analysis content
+                        const analysisContent = document.createElement('div');
+                        analysisContent.className = 'prose max-w-none text-gray-700 whitespace-pre-wrap break-words';
+                        analysisContent.innerHTML = data.analysis;
+                        resultsContainer.appendChild(analysisContent);
+
+                        // Add processing summary section
+                        const summarySection = document.createElement('div');
+                        summarySection.id = 'processing-summary';
+                        summarySection.className = 'bg-white rounded-lg p-6 border border-gray-200';
+                        summarySection.innerHTML = `
+                            <h4 class="text-xl font-semibold mb-4">Document Processing Details</h4>
+                            <div class="space-y-4">
+                                <div id="file-status-list" class="space-y-3 bg-gray-50 p-4 rounded-lg"></div>
+                                <div id="token-usage" class="mt-4 p-4 bg-blue-50 rounded-lg">
+                                    <h5 class="text-lg font-semibold mb-2">Token Usage Information</h5>
+                                    <div id="token-details" class="space-y-2 text-sm text-gray-700"></div>
+                                </div>
+                            </div>
+                        `;
+                        resultsContainer.appendChild(summarySection);
+
+                        // Replace the existing analysis section with the new container
+                        analysisSection.parentNode.replaceChild(resultsContainer, analysisSection);
+
+                        // Now display the summaries
+                        if (data.processing_summary) {
+                            console.log('Calling displayProcessingSummary');
+                            displayProcessingSummary(data.processing_summary);
+                        }
+                        
+                        if (data.token_usage) {
+                            console.log('Calling displayTokenUsage');
+                            displayTokenUsage(data.token_usage);
+                        }
+                    } else {
+                        // If analysis section doesn't exist, create it with all components
+                        const container = document.createElement('div');
+                        container.className = 'mt-8 bg-white rounded-lg shadow-md p-6';
+                        container.innerHTML = `
+                            <div class="space-y-6">
+                                <div>
+                                    <h3 class="text-xl font-bold mb-4">Analysis</h3>
+                                    <div class="prose max-w-none text-gray-700 whitespace-pre-wrap break-words">
+                                        ${data.analysis}
+                                    </div>
+                                </div>
+                                
+                                <div id="processing-summary" class="bg-white rounded-lg p-6 border border-gray-200">
+                                    <h4 class="text-xl font-semibold mb-4">Document Processing Details</h4>
+                                    <div class="space-y-4">
+                                        <div id="file-status-list" class="space-y-3 bg-gray-50 p-4 rounded-lg"></div>
+                                        <div id="token-usage" class="mt-4 p-4 bg-blue-50 rounded-lg">
+                                            <h5 class="text-lg font-semibold mb-2">Token Usage Information</h5>
+                                            <div id="token-details" class="space-y-2 text-sm text-gray-700"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        
+                        // Insert after the upload form
+                        const uploadForm = document.querySelector('#uploadForm').closest('.bg-white.rounded-lg.shadow-md.p-6');
+                        if (uploadForm && uploadForm.nextSibling) {
+                            uploadForm.parentNode.insertBefore(container, uploadForm.nextSibling);
+                        }
+
+                        // Now display the summaries
+                        if (data.processing_summary) {
+                            console.log('Calling displayProcessingSummary');
+                            displayProcessingSummary(data.processing_summary);
+                        }
+                        
+                        if (data.token_usage) {
+                            console.log('Calling displayTokenUsage');
+                            displayTokenUsage(data.token_usage);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error:', error); // Debug log
+                displayErrorMessage('Error analyzing legal pack: ' + error.message);
+            } finally {
+                hideLoadingSpinner();
+            }
+        }
+        
+        async function askFollowUp(e) {
+            e.preventDefault();
+            clearError();
+            showFollowUpLoading();
+            
+            const question = document.getElementById('question').value.trim();
+            if (!question) {
+                displayErrorMessage('Please enter a question');
+                hideFollowUpLoading();
+                return;
+            }
+            
+            if (!currentSessionId) {
+                displayErrorMessage('No active analysis session. Please analyze a legal pack first.');
+                hideFollowUpLoading();
+                return;
+            }
+            
+            try {
+                const response = await fetch('/property/ask_followup', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        question: question,
+                        session_id: currentSessionId,
+                        property_id: "{{ property_id }}"
+                    })
+                });
+                
+                if (!response.ok) {
+                    const contentType = response.headers.get("content-type");
+                    if (contentType && contentType.indexOf("application/json") !== -1) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error || 'Server error occurred');
+                    } else {
+                        const text = await response.text();
+                        throw new Error(`Server error: ${response.status}`);
+                    }
+                }
+
+                const data = await response.json();
+                
+                if (data.error) {
+                    displayErrorMessage(data.error, data.suggestion);
+                    if (data.token_summary) {
+                        displayTokenUsage(data.token_summary);
+                    }
+                    if (data.processing_summary) {
+                        console.log('Displaying error processing summary:', data.processing_summary); // Debug log
+                        displayProcessingSummary(data.processing_summary);
+                    }
+                } else {
+                    const qaHistory = document.getElementById('followupResults');
+                    const newQA = document.createElement('div');
+                    newQA.className = 'bg-gray-50 p-4 rounded-lg';
+                    newQA.innerHTML = `
+                        <p class="font-medium mb-2">Q: ${escapeHtml(question)}</p>
+                        <div class="prose max-w-none text-gray-700 whitespace-pre-wrap">
+                            ${formatAnswer(data.answer)}
+                        </div>
+                    `;
+                    qaHistory.insertBefore(newQA, qaHistory.firstChild);
+                    document.getElementById('question').value = '';
+                    
+                    // Display processing summary if available
+                    if (data.processing_summary) {
+                        console.log('Displaying success processing summary:', data.processing_summary); // Debug log
+                        displayProcessingSummary(data.processing_summary);
+                    }
+                }
+            } catch (error) {
+                console.error('Error details:', error);
+                displayErrorMessage('Error processing follow-up question: ' + error.message);
+            } finally {
+                hideFollowUpLoading();
+            }
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function formatAnswer(text) {
+            return text
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/\n/g, '<br>');
+        }
+        
+        document.getElementById('uploadForm').addEventListener('submit', analyzeLegalPack);
+        document.getElementById('followupForm').addEventListener('submit', askFollowUp);
+    </script>
+</body>
+</html>

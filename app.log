@@ -1,0 +1,60 @@
+2024-12-05 17:14:14,614 - WARNING -  * Debugger is active!
+2024-12-05 17:14:14,630 - INFO -  * Debugger PIN: 100-063-699
+2024-12-05 20:08:40,730 - INFO - 127.0.0.1 - - [05/Dec/2024 20:08:40] "GET /test-docs HTTP/1.1" 200 -
+2024-12-05 20:08:56,686 - INFO - Testing document fetch for user: williamsm66@outlook.com
+2024-12-05 20:08:56,687 - INFO - 
+Starting document fetch process...
+2024-12-05 20:08:56,687 - INFO - Target document URL: https://legaldocuments.eigroup.co.uk/showbyid/1273139
+2024-12-05 20:08:56,687 - INFO - 
+=== URL TRACKING LOG ===
+2024-12-05 20:08:56,687 - INFO - 1. Target document URL we want to reach: https://legaldocuments.eigroup.co.uk/showbyid/1273139
+2024-12-05 20:08:56,688 - INFO - Initializing Chrome driver...
+2024-12-05 20:08:59,847 - INFO - Chrome driver initialized successfully
+2024-12-05 20:08:59,849 - INFO - 2. Full login URL with return parameter: https://legaldocuments.eigroup.co.uk/account/login?ReturnUrl=https%3A//legaldocuments.eigroup.co.uk/showbyid/1273139
+2024-12-05 20:09:04,159 - INFO - 3. Actually landed on URL: https://passport.eigroup.co.uk/account/log-in
+2024-12-05 20:09:04,165 - INFO - 4. Page title on landing: Passport - Auction Passport
+2024-12-05 20:09:04,165 - INFO - Looking for login form...
+2024-12-05 20:09:04,484 - INFO - Found login button with selector: input[type='submit'][value='Sign In']
+2024-12-05 20:09:04,484 - INFO - Clicking login button...
+2024-12-05 20:09:09,016 - INFO - 5. URL after clicking login: https://legaldocuments.eigroup.co.uk/Show/NotFound
+2024-12-05 20:09:09,021 - INFO - 6. Page title after login: Not Found - Legal Documents
+2024-12-05 20:09:09,025 - INFO - 7. Checking if we reached target URL...
+2024-12-05 20:09:09,025 - INFO -    Expected: https://legaldocuments.eigroup.co.uk/showbyid/1273139
+2024-12-05 20:09:09,031 - INFO -    Current:  https://legaldocuments.eigroup.co.uk/Show/NotFound
+2024-12-05 20:09:09,031 - INFO - === END URL TRACKING LOG ===
+
+2024-12-05 20:09:09,031 - INFO - Authentication successful, fetching document page: https://legaldocuments.eigroup.co.uk/showbyid/1273139
+2024-12-05 20:09:10,166 - INFO - Document page URL after navigation: https://legaldocuments.eigroup.co.uk/showbyid/1273139
+2024-12-05 20:09:10,190 - INFO - Page title: Show - Legal Documents
+2024-12-05 20:09:10,191 - INFO - Found 0 documents:
+2024-12-05 20:09:10,366 - INFO - 127.0.0.1 - - [05/Dec/2024 20:09:10] "POST /test-fetch HTTP/1.1" 200 -
+2024-12-05 20:11:09,833 - INFO - Testing document fetch for user: williamsm66@outlook.com
+2024-12-05 20:11:09,834 - INFO - 
+Starting document fetch process...
+2024-12-05 20:11:09,834 - INFO - Target document URL: https://legaldocuments.eigroup.co.uk/showbyid/1273139
+2024-12-05 20:11:09,835 - INFO - 
+=== URL TRACKING LOG ===
+2024-12-05 20:11:09,835 - INFO - 1. Target document URL we want to reach: https://legaldocuments.eigroup.co.uk/showbyid/1273139
+2024-12-05 20:11:09,835 - INFO - Initializing Chrome driver...
+2024-12-05 20:11:12,045 - INFO - Chrome driver initialized successfully
+2024-12-05 20:11:12,048 - INFO - 2. Full login URL with return parameter: https://legaldocuments.eigroup.co.uk/account/login?ReturnUrl=https%3A//legaldocuments.eigroup.co.uk/showbyid/1273139
+2024-12-05 20:11:16,278 - INFO - 3. Actually landed on URL: https://passport.eigroup.co.uk/account/log-in
+2024-12-05 20:11:16,281 - INFO - 4. Page title on landing: Passport - Auction Passport
+2024-12-05 20:11:16,282 - INFO - Looking for login form...
+2024-12-05 20:11:16,478 - INFO - Found login button with selector: input[type='submit'][value='Sign In']
+2024-12-05 20:11:16,478 - INFO - Clicking login button...
+2024-12-05 20:11:20,644 - INFO - 5. URL after clicking login: https://legaldocuments.eigroup.co.uk/Show/NotFound
+2024-12-05 20:11:20,651 - INFO - 6. Page title after login: Not Found - Legal Documents
+2024-12-05 20:11:20,653 - INFO - 7. Checking if we reached target URL...
+2024-12-05 20:11:20,653 - INFO -    Expected: https://legaldocuments.eigroup.co.uk/showbyid/1273139
+2024-12-05 20:11:20,656 - INFO -    Current:  https://legaldocuments.eigroup.co.uk/Show/NotFound
+2024-12-05 20:11:20,656 - INFO - === END URL TRACKING LOG ===
+
+2024-12-05 20:11:20,656 - INFO - Authentication successful, fetching document page: https://legaldocuments.eigroup.co.uk/showbyid/1273139
+2024-12-05 20:11:22,247 - INFO - Document page URL after navigation: https://legaldocuments.eigroup.co.uk/showbyid/1273139
+2024-12-05 20:11:22,264 - INFO - Page title: Show - Legal Documents
+2024-12-05 20:11:22,264 - INFO - Found 0 documents:
+2024-12-05 20:11:22,377 - INFO - 127.0.0.1 - - [05/Dec/2024 20:11:22] "POST /test-fetch HTTP/1.1" 200 -
+2024-12-05 21:14:39,488 - INFO -  * Detected change in '/Users/mathewwilliams/CascadeProjects/Property_log/legal_docs_app.py', reloading
+2024-12-05 21:14:40,766 - WARNING -  * Debugger is active!
+2024-12-05 21:14:40,772 - INFO -  * Debugger PIN: 100-063-699

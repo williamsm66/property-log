@@ -1,0 +1,211 @@
+.property-card {
+    margin-bottom: 20px;
+    transition: transform 0.2s;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.property-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+
+.property-card .card-title {
+    color: #2c3e50;
+    font-size: 1.25rem;
+    margin-bottom: 1rem;
+    border-bottom: 2px solid #e9ecef;
+    padding-bottom: 0.5rem;
+}
+
+.property-card .card-text {
+    color: #555;
+    font-size: 0.9rem;
+    line-height: 1.6;
+}
+
+.property-image {
+    height: 200px;
+    object-fit: cover;
+    width: 100%;
+}
+
+.key-metrics {
+    display: flex;
+    justify-content: space-between;
+    margin: 1rem 0;
+    padding: 0.5rem;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+    font-size: 0.9rem;
+}
+
+.profit-positive {
+    color: #28a745;
+    font-weight: 500;
+}
+
+.profit-negative {
+    color: #dc3545;
+    font-weight: 500;
+}
+
+.modal-body label {
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+    color: #495057;
+}
+
+.modal-body input {
+    border-color: #ced4da;
+}
+
+.modal-body input:focus {
+    border-color: #80bdff;
+    box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25);
+}
+
+.modal-body h5 {
+    color: #2c3e50;
+    margin-top: 1.5rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid #e9ecef;
+}
+
+.btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+    margin-right: 0.5rem;
+}
+
+.navbar {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    margin-bottom: 2rem;
+}
+
+body {
+    background-color: #f8f9fa;
+}
+
+.container {
+    max-width: 1200px;
+}
+
+.card {
+    border: none;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    transition: transform 0.2s;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+}
+
+.card-title {
+    color: #2c3e50;
+    font-weight: 600;
+}
+
+.card-header {
+    background-color: #fff;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.form-label {
+    font-weight: 500;
+    color: #495057;
+}
+
+.form-control:focus {
+    border-color: #3498db;
+    box-shadow: 0 0 0 0.2rem rgba(52,152,219,0.25);
+}
+
+.btn-primary {
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+    padding: 0.5rem 2rem;
+}
+
+.btn-primary:hover {
+    background-color: #0b5ed7;
+    border-color: #0a58ca;
+}
+
+h4 {
+    color: #2c3e50;
+    font-size: 1.2rem;
+    margin-bottom: 1.5rem;
+    font-weight: 600;
+}
+
+#calculatedResults {
+    background-color: #f8f9fa;
+}
+
+#calculatedResults .card-body {
+    padding: 2rem;
+}
+
+#calculatedResults h6 {
+    color: #495057;
+    font-weight: 600;
+    margin-bottom: 1rem;
+}
+
+#calculatedResults p {
+    margin-bottom: 0.5rem;
+    color: #6c757d;
+    font-size: 1rem;
+}
+
+#calculatedResults strong {
+    color: #2c3e50;
+}
+
+#propertiesList .card {
+    height: 100%;
+    transition: transform 0.2s;
+}
+
+#propertiesList .card:hover {
+    transform: translateY(-2px);
+}
+
+.text-muted {
+    color: #7f8c8d !important;
+}
+
+.card-link {
+    color: #3498db;
+    text-decoration: none;
+}
+
+.card-link:hover {
+    color: #2980b9;
+    text-decoration: underline;
+}
+
+.card-subtitle {
+    font-size: 0.9rem;
+}
+
+.card-text {
+    font-size: 0.95rem;
+    line-height: 1.6;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .container {
+        padding: 1rem;
+    }
+    
+    .card-body {
+        padding: 1.25rem;
+    }
+    
+    h4 {
+        font-size: 1.1rem;
+    }
+}

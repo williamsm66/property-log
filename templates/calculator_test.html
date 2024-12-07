@@ -1,0 +1,1062 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Property Calculator Test</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <style>
+        body { 
+            margin: 20px;
+            font-family: Arial, sans-serif;
+        }
+        .input-group { margin: 10px 0; }
+        .calculated { background-color: #f0f0f0; }
+        label { display: inline-block; width: 250px; }
+        .section { 
+            margin: 20px 0; 
+            padding: 10px; 
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        .summary-panel {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 300px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border: 2px solid #dee2e6;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .summary-item {
+            margin: 10px 0;
+            padding: 8px;
+            background-color: white;
+            border-radius: 4px;
+        }
+        .summary-label {
+            font-weight: bold;
+            color: #495057;
+        }
+        .summary-value {
+            float: right;
+            font-weight: bold;
+            color: #28a745;
+        }
+        .main-content {
+            margin-right: 340px;
+        }
+        .rates-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+        }
+        h3 { color: #495057; }
+        #sankeyChart {
+            width: 100%;
+            height: 400px;
+            margin-top: 20px;
+            background-color: white;
+        }
+        .node rect {
+            fill-opacity: 0.9;
+            shape-rendering: crispEdges;
+        }
+        .node text {
+            font-size: 12px;
+            fill: #555;
+        }
+        .link {
+            fill: none;
+            stroke-opacity: 0.4;
+        }
+        .link:hover {
+            stroke-opacity: 0.7;
+        }
+        .feature-box {
+            padding: 20px;
+            border-radius: 8px;
+            background-color: #f8f9fa;
+            margin-bottom: 20px;
+        }
+        .feature-box i {
+            font-size: 24px;
+            color: #0d6efd;
+        }
+        .feature-box h4 {
+            margin: 10px 0;
+            font-size: 20px;
+            font-weight: bold;
+        }
+        .property-header {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .legal-pack-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex: 1;
+        }
+        .legal-pack-input {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+        }
+        .legal-pack-link-icon {
+            color: #0d6efd;
+            text-decoration: none;
+            padding: 5px;
+        }
+        .legal-pack-link-icon:hover {
+            color: #0a58ca;
+        }
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .toggle-slider {
+            background-color: #2196F3;
+        }
+        input:checked + .toggle-slider:before {
+            transform: translateX(26px);
+        }
+        .form-select {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ced4da;
+            width: 200px;
+        }
+        .form-textarea {
+            width: 100%;
+            min-height: 100px;
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ced4da;
+            resize: vertical;
+        }
+        .form-date {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ced4da;
+            width: 200px;
+        }
+    </style>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://unpkg.com/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
+    <script src="/static/js/propertyCalculator.js"></script>
+</head>
+<body>
+    <!-- Summary Panel -->
+    <div class="summary-panel">
+        <h3>Key Metrics</h3>
+        <div class="summary-item">
+            <span class="summary-label">Total ROI:</span>
+            <span class="summary-value" id="summary-roi">0%</span>
+        </div>
+        <div class="summary-item">
+            <span class="summary-label">Cash Left in Deal:</span>
+            <span class="summary-value" id="summary-cash">£0</span>
+        </div>
+        <div class="summary-item">
+            <span class="summary-label">Annual Profit:</span>
+            <span class="summary-value" id="summary-profit">£0</span>
+        </div>
+        <div class="summary-item">
+            <span class="summary-label">Total Yield:</span>
+            <span class="summary-value" id="summary-yield">0%</span>
+        </div>
+        <div class="summary-item">
+            <span class="summary-label">Flip Profit (Pre-Tax):</span>
+            <span class="summary-value" id="summary-flip">£0</span>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+                <button class="btn btn-secondary me-2" onclick="window.location.href='/'">
+                    <i class="fas fa-arrow-left"></i> Back to List
+                </button>
+            </div>
+            <div id="saveButtonContainer">
+                <h2>Property Calculator</h2>
+            </div>
+        </div>
+        
+        <!-- Property Scraping Section -->
+        <div class="section">
+            <h3>Property Details from Rightmove</h3>
+            <div class="input-group">
+                <label for="rightmoveUrl">Rightmove Property URL:</label>
+                <input type="text" class="form-control" id="rightmoveUrl" placeholder="Enter Rightmove URL">
+                <button class="btn btn-primary" onclick="scrapeProperty()">Fetch Details</button>
+            </div>
+            <div id="propertyDetails" class="mt-3" style="display: none;">
+                <!-- Property Images -->
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">Main Photo</h5>
+                                <img id="propertyImage" class="img-fluid" src="" alt="Property Image">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">Floorplan</h5>
+                                <img id="propertyFloorplan" class="img-fluid" src="" alt="Floorplan">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Property Information -->
+                <div class="row">
+                    <div class="col-md-12">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">Property Information</h5>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <p><strong>Address:</strong> <span id="propertyAddress"></span></p>
+                                        <p><strong>Price:</strong> <span id="propertyPrice"></span></p>
+                                        <p><strong>Estate Agent:</strong> <span id="propertyAgent"></span></p>
+                                        <p><strong>Property Type:</strong> <span id="propertyType"></span></p>
+                                        <p><strong>Bedrooms:</strong> <span id="propertyBedrooms"></span></p>
+                                        <p><strong>Bathrooms:</strong> <span id="propertyBathrooms"></span></p>
+                                        <p><strong>Nearest Station:</strong> <span id="propertyStation"></span></p>
+                                        <p><strong>Distance to Station:</strong> <span id="stationDistance"></span></p>
+                                        <p><strong>Auction Property:</strong> <span id="propertyAuction"></span></p>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h6>Key Features</h6>
+                                        <ul id="keyFeaturesList" class="list-group">
+                                        </ul>
+                                    </div>
+                                </div>
+                                <div class="row mt-3">
+                                    <div class="col-12">
+                                        <h6>Description</h6>
+                                        <p id="propertyDescription" class="text-muted"></p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Property Header -->
+        <div class="property-header">
+            <!-- Property Details -->
+            <div class="section">
+                <h3>Property Details</h3>
+                <div class="input-group">
+                    <label>Initial Cash Available (AG1):</label>
+                    <input type="number" id="initialCash" value="230000">
+                </div>
+                <div class="input-group">
+                    <label>Purchase Price (I3):</label>
+                    <input type="number" id="purchasePrice" value="140000">
+                </div>
+                <div class="input-group">
+                    <label>Rooms (J3):</label>
+                    <input type="number" id="rooms" value="3" min="0" step="1">
+                </div>
+                <div class="input-group">
+                    <label>Monthly Rent:</label>
+                    <input type="number" id="monthlyRent" value="1800">
+                </div>
+                <div class="input-group">
+                    <label>Valuation After Work (M3):</label>
+                    <input type="number" id="valuationAfter" value="210000">
+                </div>
+                <div class="input-group">
+                    <label>Renovation Cost (N3):</label>
+                    <input type="number" id="renovationCost" value="51000">
+                </div>
+                <div class="input-group">
+                    <label>Extra Fees (£):</label>
+                    <input type="number" id="extraFees" value="1500">
+                </div>
+                <div class="input-group">
+                    <label>Auction Property:</label>
+                    <div class="form-check form-switch d-inline-block">
+                        <input class="form-check-input" type="checkbox" role="switch" id="isAuction">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Additional Details -->
+            <div class="section">
+                <h3>Additional Details</h3>
+                <div class="input-group">
+                    <label>Legal Pack URL:</label>
+                    <div class="legal-pack-container">
+                        <input type="text" id="legalPackUrl" class="legal-pack-input" placeholder="Enter legal pack URL">
+                        <a href="#" id="legalPackLink" target="_blank" class="legal-pack-link-icon" style="display: none;">
+                            <i class="fas fa-external-link-alt fa-lg"></i>
+                        </a>
+                    </div>
+                </div>
+                <div class="input-group">
+                    <label>Legal Pack Available:</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="legalPackAvailable">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="input-group">
+                    <button id="analyzeLegalPack" class="btn btn-primary" style="margin-top: 10px;" onclick="window.location.href='/legal-pack-analyzer/{{ property.id if property else '' }}'">
+                        <i class="fas fa-search"></i> Analyze Legal Pack
+                    </button>
+                    <div id="analysisStatus" style="margin-left: 10px; display: none;">
+                        <i class="fas fa-check-circle text-success"></i> Analysis completed
+                    </div>
+                </div>
+                <div id="legalPackAnalysis" style="display: none;">
+                    <div class="alert alert-info">
+                        <div id="analysisLoading" style="display: none;">
+                            <i class="fas fa-spinner fa-spin"></i> Analyzing legal pack...
+                        </div>
+                        <div id="analysisResult"></div>
+                    </div>
+                </div>
+                <div class="input-group">
+                    <label>Risk Level:</label>
+                    <select id="riskLevel" class="form-select">
+                        <option value="">Select risk level</option>
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                        <option value="very high">Very High</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label>Key Risks:</label>
+                    <textarea id="keyRisks" class="form-textarea" placeholder="Enter key risks..."></textarea>
+                </div>
+                <div class="input-group">
+                    <label>Auction Date:</label>
+                    <input type="date" id="auctionDate" class="form-date">
+                </div>
+                <div class="input-group">
+                    <label>Viewing Date 1:</label>
+                    <input type="datetime-local" id="viewingDate1" class="form-date">
+                </div>
+                <div class="input-group">
+                    <label>Viewing Date 2:</label>
+                    <input type="datetime-local" id="viewingDate2" class="form-date">
+                </div>
+                <div class="input-group">
+                    <label>Viewing Date 3:</label>
+                    <input type="datetime-local" id="viewingDate3" class="form-date">
+                </div>
+                <div class="input-group">
+                    <label>Viewing Date 4:</label>
+                    <input type="datetime-local" id="viewingDate4" class="form-date">
+                </div>
+            </div>
+        </div>
+        
+        <!-- Loan Parameters -->
+        <div class="section">
+            <h3>Loan Details</h3>
+            <div class="input-group">
+                <label>Bridging Duration Months (P3):</label>
+                <input type="number" id="bridgingDuration" value="6">
+            </div>
+            <div class="input-group">
+                <label>Void Period Months (Q3):</label>
+                <input type="number" id="voidPeriod" value="18">
+            </div>
+        </div>
+        
+        <!-- Editable Rates -->
+        <div class="section">
+            <h3>Rates</h3>
+            <div class="rates-section">
+                <!-- Mortgage Rates -->
+                <div>
+                    <h4>Mortgage Rates</h4>
+                    <div class="input-group">
+                        <label>LTV for Mortgage:</label>
+                        <input type="number" id="mortgageLTV" value="75" step="1" min="0" max="100">%
+                    </div>
+                    <div class="input-group">
+                        <label>Mortgage Rate:</label>
+                        <input type="number" id="mortgageRate" value="5.5" step="0.1" min="0" max="100">%
+                    </div>
+                    <div class="input-group">
+                        <label>Lender Fee Rate:</label>
+                        <input type="number" id="lenderFee" value="2" step="0.1" min="0" max="100">%
+                    </div>
+                </div>
+
+                <!-- Bridging Rates -->
+                <div>
+                    <h4>Bridging Rates</h4>
+                    <div class="input-group">
+                        <label>Bridging Rate:</label>
+                        <input type="number" id="bridgingRate" value="1" step="0.1" min="0" max="100">%
+                    </div>
+                    <div class="input-group">
+                        <label>Arrangement Fee Rate:</label>
+                        <input type="number" id="arrangementRate" value="2.25" step="0.01" min="0" max="100">%
+                    </div>
+                    <div class="input-group">
+                        <label>Broker Fee Rate:</label>
+                        <input type="number" id="brokerRate" value="1" step="0.1" min="0" max="100">%
+                    </div>
+                </div>
+
+                <!-- Management Rates -->
+                <div>
+                    <h4>Management Rates</h4>
+                    <div class="input-group">
+                        <label>Rent Management Fee:</label>
+                        <input type="number" id="managementFee" value="13" step="0.1" min="0" max="100">%
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bridging Loan Calculations -->
+        <div class="section">
+            <h3>Bridging Loan Details</h3>
+            <div class="input-group">
+                <label>Cash After Purchase (AH3):</label>
+                <input type="number" id="cashAfterPurchase" class="calculated" readonly>
+            </div>
+            <div class="input-group">
+                <label>Bridging Needed (AI3):</label>
+                <input type="number" id="bridgingNeeded" class="calculated" readonly>
+            </div>
+            <div class="input-group">
+                <label>Cash Leftover After Renovations (AJ3):</label>
+                <input type="number" id="cashLeftoverAfterRenovations" class="calculated" readonly>
+            </div>
+            <div class="input-group">
+                <label>Arrangement Fees (AR3):</label>
+                <input type="number" id="arrangementFees" class="calculated" readonly>
+            </div>
+            <div class="input-group">
+                <label>Total Bridging (AK3):</label>
+                <input type="number" id="totalBridging" class="calculated" readonly>
+            </div>
+            <div class="input-group">
+                <label>Bridging Cost (AL3):</label>
+                <input type="number" id="bridgingCost" class="calculated" readonly>
+            </div>
+            <div class="input-group">
+                <label>Total Gross Loan (AS3):</label>
+                <input type="number" id="totalGrossLoan" class="calculated" readonly>
+            </div>
+            <div class="input-group">
+                <label>Broker Fees (AT3):</label>
+                <input type="number" id="brokerFees" class="calculated" readonly>
+            </div>
+            <div class="input-group">
+                <label>Monthly Bridging Cost (AU3):</label>
+                <input type="number" id="monthlyBridgingCost" class="calculated" readonly>
+            </div>
+            <div class="input-group">
+                <label>Void Cost (AV3):</label>
+                <input type="number" id="voidCost" class="calculated" readonly>
+            </div>
+            <div class="input-group">
+                <label>Amount To Repay (AW3):</label>
+                <input type="number" id="amountToRepay" class="calculated" readonly>
+            </div>
+        </div>
+
+        <!-- Calculated Results -->
+        <div class="section">
+            <h3>Purchase & Mortgage Calculations</h3>
+            <div class="input-group">
+                <label>Stamp Duty (AE3):</label>
+                <input type="number" id="stampDuty" class="calculated" readonly>
+            </div>
+            <div class="input-group">
+                <label>Total Purchase Fees (AF3):</label>
+                <input type="number" id="totalPurchaseFees" class="calculated" readonly>
+            </div>
+            <div class="input-group">
+                <label>Total Money Needed (AG3):</label>
+                <input type="number" id="totalMoneyNeeded" class="calculated" readonly>
+            </div>
+            <div class="input-group">
+                <label>Cash Left in Deal (U3):</label>
+                <input type="number" id="cashLeftInDeal" class="calculated" readonly>
+            </div>
+            <div class="input-group">
+                <label>Annual Profit (R3):</label>
+                <input type="number" id="annualProfit" class="calculated" readonly>
+            </div>
+            <div class="input-group">
+                <label>Total ROI (T3):</label>
+                <input type="text" id="totalROI" class="calculated" readonly>
+            </div>
+            <div class="input-group">
+                <label>Total Yield:</label>
+                <input type="text" id="totalYield" class="calculated" readonly>
+            </div>
+        </div>
+
+        <!-- Flip Calculations -->
+        <div class="section">
+            <h3>Flip Calculations</h3>
+            <div class="input-group">
+                <label>Flip Profit Before Tax (W3):</label>
+                <input type="number" id="flipProfitBeforeTax" class="calculated" readonly>
+            </div>
+            <div class="input-group">
+                <label>Corporation Tax (X3):</label>
+                <input type="number" id="corporationTax" class="calculated" readonly>
+            </div>
+            <div class="input-group">
+                <label>Flip Profit After Tax (Z3):</label>
+                <input type="number" id="flipProfitAfterTax" class="calculated" readonly>
+            </div>
+        </div>
+
+        <!-- Flip Profit Flow -->
+        <div class="section">
+            <h3>Flip Profit Flow</h3>
+        </div>
+
+        <!-- Bottom action buttons -->
+        <div class="section text-center mt-4 mb-5">
+            <button id="saveButton" class="btn btn-primary btn-lg" onclick="saveProperty()">
+                <i class="fas fa-save"></i> Save Property
+            </button>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Create calculator instance
+        const calculator = new PropertyCalculator();
+        
+        // Store property ID if editing existing property
+        let currentPropertyId = null;
+        
+        function updateLegalPackLink() {
+            const urlInput = document.getElementById('legalPackUrl');
+            const link = document.getElementById('legalPackLink');
+            if (urlInput.value && urlInput.value.trim() !== '') {
+                link.href = urlInput.value;
+                link.style.display = 'inline-block';
+            } else {
+                link.href = '#';
+                link.style.display = 'none';
+            }
+        }
+
+        // Update legal pack link when URL changes
+        document.getElementById('legalPackUrl').addEventListener('input', updateLegalPackLink);
+
+        // Function to load existing property data
+        function loadExistingProperty(propertyData) {
+            if (!propertyData) return;
+            
+            // Helper function to safely set element value
+            const safeSetElement = (id, value) => {
+                const element = document.getElementById(id);
+                if (element && value !== null && value !== undefined) {
+                    element.value = value;
+                }
+            };
+            
+            // Set values for all inputs
+            safeSetElement('initialCash', propertyData.initial_cash);
+            safeSetElement('purchasePrice', propertyData.purchase_price);
+            safeSetElement('extraFees', propertyData.extra_fees || 0);
+            safeSetElement('rooms', propertyData.rooms);
+            safeSetElement('monthlyRent', propertyData.monthly_rent);
+            safeSetElement('valuationAfter', propertyData.valuation_after);
+            safeSetElement('renovationCost', propertyData.renovation_cost);
+            safeSetElement('bridgingDuration', propertyData.bridging_duration);
+            safeSetElement('voidPeriod', propertyData.void_period);
+            safeSetElement('mortgageLTV', propertyData.mortgage_ltv);
+            safeSetElement('mortgageRate', propertyData.mortgage_rate);
+            safeSetElement('lenderFee', propertyData.lender_fee);
+            safeSetElement('bridgingRate', propertyData.bridging_rate);
+            safeSetElement('arrangementRate', propertyData.arrangement_rate);
+            safeSetElement('brokerRate', propertyData.broker_rate);
+            safeSetElement('managementFee', propertyData.management_fee);
+            
+            // Set auction checkbox
+            const auctionCheckbox = document.getElementById('isAuction');
+            if (auctionCheckbox) {
+                auctionCheckbox.checked = propertyData.is_auction;
+            }
+            
+            // Load all the existing values
+            document.getElementById('legalPackUrl').value = propertyData.legal_pack_url || '';
+            document.getElementById('legalPackAvailable').checked = propertyData.legal_pack_available || false;
+            document.getElementById('riskLevel').value = propertyData.risk_level || '';
+            document.getElementById('keyRisks').value = propertyData.key_risks || '';
+            document.getElementById('auctionDate').value = propertyData.auction_date ? propertyData.auction_date.split('T')[0] : '';
+            
+            // Load viewing dates
+            document.getElementById('viewingDate1').value = propertyData.viewing_date_1 ? propertyData.viewing_date_1.replace('Z', '') : '';
+            document.getElementById('viewingDate2').value = propertyData.viewing_date_2 ? propertyData.viewing_date_2.replace('Z', '') : '';
+            document.getElementById('viewingDate3').value = propertyData.viewing_date_3 ? propertyData.viewing_date_3.replace('Z', '') : '';
+            document.getElementById('viewingDate4').value = propertyData.viewing_date_4 ? propertyData.viewing_date_4.replace('Z', '') : '';
+
+            // Load rate values
+            document.getElementById('mortgageLTV').value = propertyData.mortgage_ltv || '';
+            document.getElementById('mortgageRate').value = propertyData.mortgage_rate || '';
+            document.getElementById('lenderFee').value = propertyData.lender_fee || '';
+            document.getElementById('bridgingRate').value = propertyData.bridging_rate || '';
+            document.getElementById('arrangementRate').value = propertyData.arrangement_rate || '';
+            document.getElementById('brokerRate').value = propertyData.broker_rate || '';
+            document.getElementById('managementFee').value = propertyData.management_fee || '';
+
+            // Update the legal pack link visibility
+            updateLegalPackLink();
+            
+            // Show the property details section
+            document.getElementById('propertyDetails').style.display = 'block';
+
+            // Load scraped property details
+            if (propertyData.main_photo) {
+                const propertyImage = document.getElementById('propertyImage');
+                propertyImage.src = propertyData.main_photo;
+                propertyImage.style.display = 'block';
+            }
+
+            if (propertyData.floorplan) {
+                const propertyFloorplan = document.getElementById('propertyFloorplan');
+                propertyFloorplan.src = propertyData.floorplan;
+                propertyFloorplan.style.display = 'block';
+            }
+
+            if (propertyData.description) {
+                document.getElementById('propertyDescription').textContent = propertyData.description;
+            }
+
+            if (propertyData.address) {
+                document.getElementById('propertyAddress').textContent = propertyData.address;
+            }
+
+            if (propertyData.estate_agent) {
+                document.getElementById('propertyAgent').textContent = propertyData.estate_agent;
+            }
+
+            if (propertyData.key_features && propertyData.key_features.length > 0) {
+                const keyFeaturesList = document.getElementById('keyFeaturesList');
+                keyFeaturesList.innerHTML = '';
+                propertyData.key_features.forEach(feature => {
+                    const li = document.createElement('li');
+                    li.className = 'list-group-item';
+                    li.textContent = feature;
+                    keyFeaturesList.appendChild(li);
+                });
+            }
+
+            if (propertyData.bedrooms) {
+                document.getElementById('propertyBedrooms').textContent = propertyData.bedrooms;
+            }
+
+            if (propertyData.bathrooms) {
+                document.getElementById('propertyBathrooms').textContent = propertyData.bathrooms;
+            }
+
+            if (propertyData.property_type) {
+                document.getElementById('propertyType').textContent = propertyData.property_type;
+            }
+
+            if (propertyData.nearest_station) {
+                document.getElementById('propertyStation').textContent = propertyData.nearest_station;
+            }
+
+            if (propertyData.station_distance) {
+                document.getElementById('stationDistance').textContent = propertyData.station_distance;
+            }
+
+            if (propertyData.is_auction !== undefined) {
+                document.getElementById('propertyAuction').textContent = propertyData.is_auction ? 'Yes' : 'No';
+            }
+
+            // Store the property ID and update button text
+            currentPropertyId = propertyData.id;
+            if (currentPropertyId) {
+                document.getElementById('saveButton').innerHTML = '<i class="fas fa-save"></i> Update Property';
+            }
+            
+            // Trigger calculations update
+            updateCalculations();
+        }
+
+        // Function to save property data
+        async function saveProperty() {
+            // Helper function to safely get element value
+            const safeGetElement = (id) => document.getElementById(id);
+            const safeGetValue = (id, defaultValue = null) => {
+                const element = safeGetElement(id);
+                return element ? element.value : defaultValue;
+            };
+            const safeGetNumber = (id, defaultValue = null) => {
+                const value = safeGetValue(id);
+                return value ? parseFloat(value) : defaultValue;
+            };
+            const safeGetInt = (id, defaultValue = null) => {
+                const value = safeGetValue(id);
+                // Allow zero values by checking if value is not null or undefined
+                return value !== null && value !== undefined && value !== '' ? parseInt(value) : defaultValue;
+            };
+            const safeGetContent = (id, defaultValue = null) => {
+                const element = safeGetElement(id);
+                return element ? element.textContent : defaultValue;
+            };
+            const safeGetSrc = (id, defaultValue = null) => {
+                const element = safeGetElement(id);
+                return element ? element.src : defaultValue;
+            };
+            const safeGetKeyFeatures = (id, defaultValue = []) => {
+                const element = safeGetElement(id);
+                return element ? Array.from(element.children).map(li => li.textContent) : defaultValue;
+            };
+
+            // Get all input values
+            const data = {
+                initial_cash: safeGetNumber('initialCash'),
+                purchase_price: safeGetNumber('purchasePrice'),
+                extra_fees: safeGetNumber('extraFees') || 0,
+                rooms: safeGetInt('rooms'),
+                monthly_rent: safeGetNumber('monthlyRent'),
+                valuation_after: safeGetNumber('valuationAfter'),
+                renovation_cost: safeGetNumber('renovationCost'),
+                bridging_duration: safeGetInt('bridgingDuration'),
+                void_period: safeGetInt('voidPeriod'),
+                mortgage_ltv: safeGetNumber('mortgageLTV'),
+                mortgage_rate: safeGetNumber('mortgageRate'),
+                lender_fee: safeGetNumber('lenderFee'),
+                bridging_rate: safeGetNumber('bridgingRate'),
+                arrangement_rate: safeGetNumber('arrangementRate'),
+                broker_rate: safeGetNumber('brokerRate'),
+                management_fee: safeGetNumber('managementFee'),
+                
+                // Add scraped data
+                main_photo: safeGetSrc('propertyImage'),
+                floorplan: safeGetSrc('propertyFloorplan'),
+                description: safeGetContent('propertyDescription'),
+                key_features: safeGetKeyFeatures('keyFeaturesList'),
+                address: safeGetContent('propertyAddress'),
+                rightmove_url: safeGetValue('rightmoveUrl'),
+                is_auction: document.getElementById('isAuction').checked,
+                estate_agent: safeGetContent('propertyAgent'),
+                nearest_station: safeGetContent('propertyStation'),
+                station_distance: parseFloat(safeGetContent('stationDistance')) || null,
+                bedrooms: parseInt(safeGetContent('propertyBedrooms')) || null,
+                bathrooms: parseInt(safeGetContent('propertyBathrooms')) || null,
+                property_type: safeGetContent('propertyType'),
+
+                // Add additional details
+                legal_pack_url: safeGetValue('legalPackUrl'),
+                legal_pack_available: safeGetElement('legalPackAvailable').checked,
+                risk_level: safeGetValue('riskLevel'),
+                key_risks: safeGetValue('keyRisks'),
+                auction_date: safeGetValue('auctionDate'),
+
+                // Add viewing dates
+                viewing_date_1: safeGetValue('viewingDate1'),
+                viewing_date_2: safeGetValue('viewingDate2'),
+                viewing_date_3: safeGetValue('viewingDate3'),
+                viewing_date_4: safeGetValue('viewingDate4'),
+
+                // Add calculated values
+                stamp_duty: safeGetNumber('stampDuty'),
+                total_purchase_fees: safeGetNumber('totalPurchaseFees'),
+                total_money_needed: safeGetNumber('totalMoneyNeeded'),
+                cash_left_in_deal: safeGetNumber('cashLeftInDeal'),
+                annual_profit: safeGetNumber('annualProfit'),
+                total_roi: parseFloat(safeGetValue('totalROI')),
+                total_yield: parseFloat(safeGetValue('totalYield'))
+            };
+
+            try {
+                const endpoint = currentPropertyId ? `/api/properties/${currentPropertyId}` : '/api/properties';
+                const method = currentPropertyId ? 'PUT' : 'POST';
+
+                const response = await fetch(endpoint, {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const result = await response.json();
+                
+                // Redirect to property list after successful save/update
+                window.location.href = '/';
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to save property');
+            }
+        }
+
+        // Check if we're editing an existing property
+        document.addEventListener('DOMContentLoaded', () => {
+            // Check if property data was passed from Flask
+            const propertyData = {{ property | tojson | safe if property else 'null' }};
+            if (propertyData) {
+                loadExistingProperty(propertyData);
+            }
+
+            // Initial calculation
+            updateCalculations();
+        });
+
+        // Show analysis status if analysis exists
+        document.addEventListener('DOMContentLoaded', () => {
+            const propertyData = {{ property | tojson | safe if property else 'null' }};
+            if (propertyData && propertyData.legal_pack_analysis) {
+                document.getElementById('analysisStatus').style.display = 'inline-block';
+            }
+        });
+
+        function updateCalculations() {
+            const calculator = new PropertyCalculator();
+            
+            // Get input values
+            const initialCash = parseFloat(document.getElementById('initialCash').value) || 0;
+            const purchasePrice = parseFloat(document.getElementById('purchasePrice').value) || 0;
+            const rooms = parseInt(document.getElementById('rooms').value);  // Allow 0 value
+            const monthlyRent = parseFloat(document.getElementById('monthlyRent').value) || 0;
+            const valuationAfter = parseFloat(document.getElementById('valuationAfter').value) || 0;
+            const renovationCost = parseFloat(document.getElementById('renovationCost').value) || 0;
+            const bridgingDuration = parseInt(document.getElementById('bridgingDuration').value) || 0;
+            const voidPeriod = parseInt(document.getElementById('voidPeriod').value) || 0;
+            const mortgageLtv = parseFloat(document.getElementById('mortgageLTV').value) / 100 || 0;
+            const mortgageRate = parseFloat(document.getElementById('mortgageRate').value) / 100 || 0;
+            const lenderFee = parseFloat(document.getElementById('lenderFee').value) / 100 || 0;
+            const bridgingRate = parseFloat(document.getElementById('bridgingRate').value) / 100 || 0;
+            const arrangementRate = parseFloat(document.getElementById('arrangementRate').value) / 100 || 0;
+            const brokerRate = parseFloat(document.getElementById('brokerRate').value) / 100 || 0;
+            const managementFee = parseFloat(document.getElementById('managementFee').value) / 100 || 0;
+            const extraFees = parseFloat(document.getElementById('extraFees').value) || 0;
+            
+            // Calculate using the PropertyCalculator class
+            const stampDuty = calculator.calculateStampDuty(purchasePrice);
+            const totalPurchaseFees = calculator.calculateTotalPurchaseFees(stampDuty, extraFees);
+            const totalMoneyNeeded = calculator.calculateTotalMoneyNeeded(totalPurchaseFees, purchasePrice);
+
+            // Calculate bridging loan details
+            const bridgingLoan = calculator.calculateBridgingLoan({
+                initialCash,
+                totalMoneyNeeded,
+                renovationCost,
+                bridgingRate,
+                arrangementRate,
+                brokerRate,
+                bridgingDuration
+            });
+
+            // Calculate mortgage details
+            const mortgage = calculator.calculateMortgage({
+                mortgageLtv,
+                valuationAfter,
+                lenderFee,
+                mortgageRate
+            });
+
+            // Calculate rental income and expenses
+            const rental = calculator.calculateRental({
+                monthlyRent,
+                rooms,
+                managementFee
+            });
+
+            // Calculate profit metrics
+            const profit = calculator.calculateProfit({
+                rentalIncome: rental.rentalIncome,
+                annualMortgageInterest: mortgage.annualMortgageInterest,
+                totalMoneyNeeded,
+                bridgingCost: bridgingLoan.bridgingCost,
+                renovationCost,
+                arrangementFees: bridgingLoan.arrangementFees,
+                brokerFees: bridgingLoan.brokerFees,
+                mortgageAmount: mortgage.mortgageAmount,
+                valuationAfter,
+                extraFees
+            });
+
+            // Calculate flip profit
+            const flip = calculator.calculateFlipProfit({
+                valuationAfter,
+                totalMoneyNeeded,
+                renovationCost,
+                bridgingCost: bridgingLoan.bridgingCost,
+                arrangementFees: bridgingLoan.arrangementFees,
+                brokerFees: bridgingLoan.brokerFees
+            });
+
+            // Update summary panel
+            document.getElementById('summary-roi').textContent = profit.totalROI.toFixed(2) + '%';
+            document.getElementById('summary-cash').textContent = '£' + (profit.cashLeftInDeal < 0 ? '-' : '') + Math.abs(profit.cashLeftInDeal).toFixed(2);
+            document.getElementById('summary-profit').textContent = '£' + profit.annualProfit.toFixed(2);
+            document.getElementById('summary-yield').textContent = profit.totalYield.toFixed(2) + '%';
+            document.getElementById('summary-flip').textContent = '£' + flip.flipProfitBeforeTax.toFixed(2);
+
+            // Update output fields
+            document.getElementById('stampDuty').value = stampDuty.toFixed(2);
+            document.getElementById('totalPurchaseFees').value = totalPurchaseFees.toFixed(2);
+            document.getElementById('totalMoneyNeeded').value = totalMoneyNeeded.toFixed(2);
+            document.getElementById('cashLeftInDeal').value = profit.cashLeftInDeal.toFixed(2);
+            document.getElementById('annualProfit').value = profit.annualProfit.toFixed(2);
+            document.getElementById('totalROI').value = profit.totalROI.toFixed(2) + '%';
+            document.getElementById('totalYield').value = profit.totalYield.toFixed(2) + '%';
+
+            // Update bridging loan fields
+            document.getElementById('cashAfterPurchase').value = (initialCash - totalMoneyNeeded).toFixed(2);
+            document.getElementById('bridgingNeeded').value = bridgingLoan.bridgingNeeded.toFixed(2);
+            document.getElementById('cashLeftoverAfterRenovations').value = bridgingLoan.cashLeftoverAfterRenovations.toFixed(2);
+            document.getElementById('arrangementFees').value = bridgingLoan.arrangementFees.toFixed(2);
+            document.getElementById('totalBridging').value = bridgingLoan.totalBridging.toFixed(2);
+            document.getElementById('bridgingCost').value = bridgingLoan.bridgingCost.toFixed(2);
+            document.getElementById('totalGrossLoan').value = bridgingLoan.totalGrossLoan.toFixed(2);
+            document.getElementById('brokerFees').value = bridgingLoan.brokerFees.toFixed(2);
+            document.getElementById('monthlyBridgingCost').value = bridgingLoan.monthlyBridgingCost.toFixed(2);
+            document.getElementById('voidCost').value = (voidPeriod * bridgingLoan.monthlyBridgingCost).toFixed(2);
+            document.getElementById('amountToRepay').value = bridgingLoan.amountToRepay.toFixed(2);
+            
+            // Update flip calculations
+            document.getElementById('flipProfitBeforeTax').value = flip.flipProfitBeforeTax.toFixed(2);
+            document.getElementById('corporationTax').value = flip.corporationTax.toFixed(2);
+            document.getElementById('flipProfitAfterTax').value = flip.flipProfitAfterTax.toFixed(2);
+        }
+
+        // Add event listeners to all input fields
+        document.querySelectorAll('input:not(.calculated)').forEach(input => {
+            input.addEventListener('input', updateCalculations);
+        });
+
+        // Show analysis status if analysis exists
+        document.addEventListener('DOMContentLoaded', () => {
+            const propertyData = {{ property | tojson | safe if property else 'null' }};
+            if (propertyData && propertyData.legal_pack_analysis) {
+                document.getElementById('analysisStatus').style.display = 'inline-block';
+            }
+        });
+    </script>
+
+    <script>
+        async function scrapeProperty() {
+            const url = document.getElementById('rightmoveUrl').value;
+            if (!url) {
+                alert('Please enter a Rightmove URL');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/scrape-property', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ url: url })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // Store the Rightmove URL
+                    document.getElementById('rightmoveUrl').value = url;
+                    // Update UI with property details
+                    document.getElementById('propertyImage').src = data.main_photo || '';
+                    document.getElementById('propertyFloorplan').src = data.floorplan || '';
+                    document.getElementById('propertyAddress').textContent = data.address || 'N/A';
+                    document.getElementById('propertyPrice').textContent = data.price || 'N/A';
+                    document.getElementById('propertyAgent').textContent = data.estate_agent || 'N/A';
+                    document.getElementById('propertyStation').textContent = data.nearest_station || 'N/A';
+                    document.getElementById('propertyAuction').textContent = data.is_auction ? 'Yes' : 'No';
+                    document.getElementById('propertyDescription').innerHTML = data.description || 'No description available';
+                    
+                    // Update key features
+                    document.getElementById('propertyBedrooms').textContent = data.bedrooms || 'N/A';
+                    document.getElementById('propertyBathrooms').textContent = data.bathrooms || 'N/A';
+                    document.getElementById('propertyType').textContent = data.property_type || 'N/A';
+                    document.getElementById('stationDistance').textContent = data.station_distance ? `${data.station_distance} miles` : 'N/A';
+                    
+                    // Update key features list
+                    const keyFeaturesList = document.getElementById('keyFeaturesList');
+                    keyFeaturesList.innerHTML = '';
+                    if (data.key_features && data.key_features.length > 0) {
+                        data.key_features.forEach(feature => {
+                            const li = document.createElement('li');
+                            li.className = 'list-group-item';
+                            li.textContent = feature;
+                            keyFeaturesList.appendChild(li);
+                        });
+                    } else {
+                        const li = document.createElement('li');
+                        li.className = 'list-group-item';
+                        li.textContent = 'No key features available';
+                        keyFeaturesList.appendChild(li);
+                    }
+                    
+                    // Show the property details section
+                    document.getElementById('propertyDetails').style.display = 'block';
+                    
+                    // Auto-fill some calculator fields if available
+                    if (data.price) {
+                        document.getElementById('purchasePrice').value = parseFloat(data.price.replace(/[^0-9.]/g, ''));
+                        updateCalculations();
+                    }
+                } else {
+                    alert('Failed to scrape property data: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('An error occurred while scraping the property data');
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Property Investment Portfolio</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        .property-thumbnail {
+            width: 100px;
+            height: 75px;
+            object-fit: cover;
+            border-radius: 4px;
+        }
+        
+        .risk-badge {
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            font-weight: 500;
+            display: inline-block;
+            min-width: 100px;
+            text-align: center;
+            white-space: nowrap;
+        }
+        
+        .risk-low {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .risk-medium {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+        }
+        
+        .risk-high {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .risk-very-high {
+            background-color: #dc3545;
+            color: #ffffff;
+            border: 1px solid #dc3545;
+        }
+        
+        .risk-not-set {
+            background-color: #e2e3e5;
+            color: #383d41;
+            border: 1px solid #d6d8db;
+        }
+        
+        .property-img {
+            width: 60px;
+            height: 45px;
+            object-fit: cover;
+        }
+        .table td {
+            vertical-align: middle;
+        }
+        .badge {
+            font-size: 0.85rem;
+        }
+        .sortable {
+            cursor: pointer;
+        }
+        .sortable:hover {
+            background-color: rgba(0,0,0,0.05);
+        }
+        .sortable::after {
+            content: '↕️';
+            font-size: 0.8em;
+            margin-left: 5px;
+            opacity: 0.5;
+        }
+        .sortable.asc::after {
+            content: '↑';
+            opacity: 1;
+        }
+        .sortable.desc::after {
+            content: '↓';
+            opacity: 1;
+        }
+        .legal-pack-cell {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .legal-pack-link {
+            color: #0d6efd;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+        }
+        .legal-pack-link:hover {
+            color: #0a58ca;
+        }
+        .legal-pack-icon {
+            font-size: 1.2em;
+            margin-left: 4px;
+        }
+        .property-img-container {
+            position: relative;
+            display: inline-block;
+        }
+        .floorplan-icon {
+            position: absolute;
+            bottom: -5px;
+            right: -5px;
+            background-color: white;
+            border-radius: 50%;
+            padding: 2px;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .floorplan-hover {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            padding: 12px;
+            min-width: 800px;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        .floorplan-hover img {
+            width: 100%;
+            height: auto;
+            min-width: 800px;
+        }
+        .floorplan-icon:hover + .floorplan-hover {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container d-flex justify-content-between align-items-center">
+            <span class="navbar-brand">Property Investment Portfolio</span>
+            <button class="btn btn-success" onclick="window.location.href='/calculator_test'">
+                <i class="bi bi-plus-circle"></i> Add New Property
+            </button>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="sort-options mb-3">
+            <button class="btn btn-secondary" onclick="sortProperties('address')">Sort by Address</button>
+            <button class="btn btn-secondary" onclick="sortProperties('purchase_price')">Sort by Price</button>
+            <button class="btn btn-secondary" onclick="sortProperties('total_roi')">Sort by ROI</button>
+            <button class="btn btn-secondary" onclick="sortProperties('total_yield')">Sort by Yield</button>
+            <button class="btn btn-secondary" onclick="sortProperties('risk_level')">Sort by Risk Level</button>
+        </div>
+        <!-- Property Table -->
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Property</th>
+                        <th class="sortable" data-sort="address">Address <i class="fas fa-sort"></i></th>
+                        <th class="text-end sortable" data-sort="purchase_price">Purchase Price <i class="fas fa-sort"></i></th>
+                        <th>Legal Pack</th>
+                        <th class="sortable" data-sort="risk_level">Risk Level <i class="fas fa-sort"></i></th>
+                        <th>Auction Date</th>
+                        <th class="text-end sortable" data-sort="total_roi">Total ROI <i class="fas fa-sort"></i></th>
+                        <th class="text-end sortable" data-sort="cash_left_in_deal">Cash Left in Deal <i class="fas fa-sort"></i></th>
+                        <th class="text-end sortable" data-sort="annual_profit">Annual Profit <i class="fas fa-sort"></i></th>
+                        <th class="text-end sortable" data-sort="yield">Yield <i class="fas fa-sort"></i></th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="propertyList">
+                    <!-- Properties will be dynamically inserted here -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div class="modal fade" id="deleteModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Confirm Delete</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    Are you sure you want to delete this property?
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" onclick="deleteProperty()">Delete</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let propertyToDelete = null;
+        const deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+        let properties = []; // Store properties globally
+        let currentSort = { column: null, direction: 'asc' };
+
+        function formatCurrency(value) {
+            return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(value);
+        }
+
+        function formatMoney(value) {
+            if (value === null || value === undefined) return 'N/A';
+            return new Intl.NumberFormat('en-GB', { 
+                style: 'currency', 
+                currency: 'GBP',
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            }).format(value).replace('GBP', '£');
+        }
+
+        function formatPercentage(value) {
+            if (!value && value !== 0) return 'N/A';
+            return new Intl.NumberFormat('en-GB', {
+                style: 'percent',
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            }).format(value/100);
+        }
+
+        function getRiskBadgeClass(risk) {
+            if (!risk) return 'risk-not-set';
+            switch(risk.toLowerCase()) {
+                case 'low': return 'risk-low';
+                case 'medium': return 'risk-medium';
+                case 'high': return 'risk-high';
+                case 'very high': return 'risk-very-high';
+                default: return 'risk-not-set';
+            }
+        }
+
+        function sortProperties(column) {
+            if (currentSort.column === column) {
+                currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort.column = column;
+                currentSort.direction = 'asc';
+            }
+
+            // Update sort indicators
+            document.querySelectorAll('.sortable').forEach(th => {
+                const icon = th.querySelector('i.fas');
+                icon.className = 'fas fa-sort';
+                if (th.dataset.sort === column) {
+                    icon.className = `fas fa-sort-${currentSort.direction === 'asc' ? 'up' : 'down'}`;
+                }
+            });
+
+            // Sort the properties array
+            properties.sort((a, b) => {
+                let aValue = a[column];
+                let bValue = b[column];
+
+                // Handle special cases
+                if (column === 'risk_level') {
+                    const riskOrder = { 'low': 1, 'medium': 2, 'high': 3, 'very high': 4 };
+                    aValue = riskOrder[aValue?.toLowerCase()] || 5;
+                    bValue = riskOrder[bValue?.toLowerCase()] || 5;
+                } else if (column === 'auction_date') {
+                    aValue = aValue ? new Date(aValue) : new Date(0);
+                    bValue = bValue ? new Date(bValue) : new Date(0);
+                }
+
+                // Handle null/undefined values
+                if (aValue === null || aValue === undefined) aValue = '';
+                if (bValue === null || bValue === undefined) bValue = '';
+
+                // Compare the values
+                let comparison;
+                if (typeof aValue === 'string') {
+                    comparison = aValue.localeCompare(bValue);
+                } else if (aValue instanceof Date) {
+                    comparison = aValue - bValue;
+                } else {
+                    comparison = aValue - bValue;
+                }
+
+                return currentSort.direction === 'asc' ? comparison : -comparison;
+            });
+
+            displayProperties();
+        }
+
+        function displayProperties() {
+            const propertyList = document.getElementById('propertyList');
+            propertyList.innerHTML = '';
+
+            properties.forEach(property => {
+                const propertyType = property.rooms === 0 ? 'BTL' : 'HMO';
+                const auctionBadge = property.is_auction ? '<span class="badge bg-warning ms-2">Auction</span>' : '';
+                
+                const row = document.createElement('tr');
+                
+                // Format risk level display
+                let riskDisplay = property.is_auction ? 
+                    (property.risk_level ? 
+                        `<span class="risk-badge ${getRiskBadgeClass(property.risk_level)}">
+                            ${property.risk_level.charAt(0).toUpperCase() + property.risk_level.slice(1).toLowerCase()}
+                        </span>` : 
+                        `<span class="risk-badge risk-not-set">Not Set</span>`
+                    ) : 'N/A';
+
+                // Format legal pack display
+                let legalPackDisplay = property.is_auction ? 
+                    `<button class="btn ${property.legal_pack_available ? 'btn-success' : 'btn-danger'} btn-sm">
+                        <i class="bi ${property.legal_pack_available ? 'bi-check-lg' : 'bi-x-lg'}"></i>
+                    </button>
+                    ${property.legal_pack_url ? 
+                        `<a href="${property.legal_pack_url}" target="_blank" class="legal-pack-link" title="View Legal Pack">
+                            <i class="bi bi-file-earmark-text legal-pack-icon"></i>
+                        </a>` : 
+                        ''
+                    }` :
+                    'N/A';
+
+                // Format auction date display
+                let auctionDateDisplay = property.is_auction ?
+                    (property.auction_date ? 
+                        new Date(property.auction_date).toLocaleDateString('en-GB') : 
+                        'Not Set'
+                    ) : 'N/A';
+
+                row.innerHTML = `
+                    <td>
+                        <div class="d-flex align-items-center">
+                            <div class="property-img-container me-3">
+                                <img src="${property.main_photo || '/static/img/placeholder.jpg'}" 
+                                     alt="Property" class="property-img">
+                                ${property.floorplan ? `
+                                    <i class="bi bi-house-door floorplan-icon"></i>
+                                    <div class="floorplan-hover">
+                                        <img src="${property.floorplan}" alt="Floorplan">
+                                    </div>
+                                ` : ''}
+                            </div>
+                            <div>
+                                <div class="mb-1">
+                                    ${property.rightmove_url ? 
+                                        `<a href="${property.rightmove_url}" target="_blank" class="text-decoration-none">
+                                            ${property.address || 'Address not available'}
+                                        </a>` : 
+                                        `${property.address || 'Address not available'}`
+                                    }
+                                    <span class="badge bg-info ms-2">${propertyType}</span>
+                                    ${auctionBadge}
+                                </div>
+                            </div>
+                        </div>
+                    </td>
+                    <td>${property.address || 'N/A'}</td>
+                    <td class="text-end">${formatMoney(property.purchase_price + (property.extra_fees || 0))}</td>
+                    <td>
+                        <div class="legal-pack-cell">
+                            ${legalPackDisplay}
+                        </div>
+                    </td>
+                    <td>${riskDisplay}</td>
+                    <td>${auctionDateDisplay}</td>
+                    <td class="text-end">${formatPercentage(property.total_roi)}</td>
+                    <td class="text-end">${formatMoney(property.cash_left_in_deal)}</td>
+                    <td class="text-end">${formatMoney(property.annual_profit)}</td>
+                    <td class="text-end">${formatPercentage(property.total_yield)}</td>
+                    <td>
+                        <div class="btn-group">
+                            <button class="btn btn-sm btn-outline-primary" onclick="window.location.href='/calculator_test?id=${property.id}'">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button class="btn btn-sm btn-info" onclick="duplicateProperty(${property.id})">
+                                <i class="bi bi-file-earmark-text"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" onclick="showDeleteModal(${property.id})">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                `;
+                propertyList.appendChild(row);
+            });
+        }
+
+        async function loadProperties() {
+            try {
+                const response = await fetch('/api/properties');
+                properties = await response.json(); // Store in global variable
+                displayProperties();
+
+                // Add click handlers for sortable columns
+                document.querySelectorAll('.sortable').forEach(th => {
+                    th.addEventListener('click', () => sortProperties(th.dataset.sort));
+                });
+            } catch (error) {
+                console.error('Error loading properties:', error);
+            }
+        }
+
+        function showDeleteModal(propertyId) {
+            propertyToDelete = propertyId;
+            deleteModal.show();
+        }
+
+        async function deleteProperty() {
+            if (!propertyToDelete) return;
+            
+            try {
+                const response = await fetch(`/api/properties/${propertyToDelete}`, {
+                    method: 'DELETE'
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                // Close the modal and reload the properties
+                deleteModal.hide();
+                loadProperties();
+                
+                // Show success message
+                alert('Property deleted successfully');
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to delete property: ' + error.message);
+            } finally {
+                propertyToDelete = null;
+            }
+        }
+
+        async function duplicateProperty(propertyId) {
+            if (!confirm('Are you sure you want to duplicate this property?')) return;
+            
+            try {
+                const response = await fetch(`/api/properties/${propertyId}/duplicate`, {
+                    method: 'POST'
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to duplicate property');
+                }
+                
+                location.reload();
+            } catch (error) {
+                alert(error.message);
+            }
+        }
+
+        // Load properties when page loads
+        document.addEventListener('DOMContentLoaded', loadProperties);
+    </script>
+</body>
+</html>

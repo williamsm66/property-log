@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: property-log
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.12
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: property-log-db
+          property: connectionString
+
+databases:
+  - name: property-log-db
+    databaseName: property_log
+    user: property_log_user
+    plan: free
