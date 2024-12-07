@@ -2,17 +2,7 @@ services:
   - type: web
     name: property-log
     env: python
-    buildCommand: |
-      # Update package lists
-      apt-get update
-      # Install system dependencies
-      apt-get install -y software-properties-common
-      add-apt-repository -y ppa:libreoffice/ppa
-      apt-get update
-      # Install required packages
-      DEBIAN_FRONTEND=noninteractive apt-get install -y tesseract-ocr tesseract-ocr-eng libreoffice poppler-utils ghostscript
-      # Install Python dependencies
-      pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
     envVars:
       - key: PYTHON_VERSION

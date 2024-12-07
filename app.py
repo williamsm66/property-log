@@ -460,7 +460,7 @@ def load_documents(session_id):
 
 def analyze_with_claude(documents_content, processing_summary=None, follow_up_question=None, initial_analysis=None, qa_history=None):
     try:
-        client = anthropic.Anthropic(api_key=os.getenv('CLAUDE_API_KEY'))
+        client = anthropic.Client(api_key=os.getenv('CLAUDE_API_KEY'))
         
         # Prepare the system prompt
         system_prompt = """You are a legal expert analyzing property documents. Focus on:
@@ -484,11 +484,11 @@ Provide a clear, concise summary highlighting any red flags."""
         # Create the message using the new API format
         response = client.messages.create(
             model="claude-3-opus-20240229",
+            max_tokens=4000,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message}
-            ],
-            max_tokens=4000
+            ]
         )
 
         # Extract the response
