@@ -55,7 +55,8 @@ def check_system_dependencies():
     try:
         tesseract_path = os.path.join(bin_path, 'tesseract')
         result = subprocess.run([tesseract_path, '--version'], capture_output=True, text=True)
-        logger.info(f"Tesseract version: {result.stdout.split('\n')[0] if result.returncode == 0 else 'Not found'}")
+        version_line = result.stdout.splitlines()[0] if result.returncode == 0 else 'Not found'
+        logger.info(f"Tesseract version: {version_line}")
         logger.info(f"TESSDATA_PREFIX: {os.environ.get('TESSDATA_PREFIX', 'Not set')}")
     except Exception as e:
         logger.error(f"Error checking tesseract: {str(e)}")
@@ -64,7 +65,8 @@ def check_system_dependencies():
     try:
         soffice_path = os.path.join(bin_path, 'soffice')
         result = subprocess.run([soffice_path, '--version'], capture_output=True, text=True)
-        logger.info(f"LibreOffice version: {result.stdout.strip() if result.returncode == 0 else 'Not found'}")
+        version_line = result.stdout.strip() if result.returncode == 0 else 'Not found'
+        logger.info(f"LibreOffice version: {version_line}")
     except Exception as e:
         logger.error(f"Error checking LibreOffice: {str(e)}")
     
