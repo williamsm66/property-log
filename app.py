@@ -511,16 +511,19 @@ Provide a clear, concise summary highlighting any red flags."""
             if qa_history:
                 user_message += f"\n\nPrevious Q&A:\n{qa_history}"
 
-        # Create the completion using the old API format
-        response = client.complete(
-            prompt=f"\n\nHuman: {user_message}\n\nAssistant: ",
+        # Create the completion using the messages API format for v0.7.8
+        response = client.messages.create(
             model="claude-3-opus-20240229",
-            max_tokens_to_sample=4000,
-            temperature=0
+            max_tokens=4000,
+            temperature=0,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message}
+            ]
         )
 
         # Extract the response
-        analysis = response.completion
+        analysis = response.content[0].text
 
         app.logger.info(f"Successfully got analysis from Claude API")
         return analysis

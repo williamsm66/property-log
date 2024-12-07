@@ -7,24 +7,28 @@ set -e
 apt-get update
 
 # Install system dependencies
-apt-get install -y software-properties-common
-
-# Add LibreOffice PPA
-add-apt-repository -y ppa:libreoffice/ppa
-
-# Update again after adding PPA
-apt-get update
-
-# Install required packages
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    software-properties-common \
     tesseract-ocr \
     tesseract-ocr-eng \
     libreoffice \
     poppler-utils \
     ghostscript
 
-# Verify installations
+# Create symbolic links in /usr/local/bin if needed
+if [ ! -f "/usr/local/bin/tesseract" ]; then
+    ln -s $(which tesseract) /usr/local/bin/tesseract
+fi
+
+if [ ! -f "/usr/local/bin/soffice" ]; then
+    ln -s $(which soffice) /usr/local/bin/soffice
+fi
+
+# Verify installations and print versions
 echo "Checking installations..."
-which tesseract
-which soffice
-which pdftotext
+echo "Tesseract version:"
+tesseract --version
+echo "LibreOffice version:"
+soffice --version
+echo "PATH environment:"
+echo $PATH
