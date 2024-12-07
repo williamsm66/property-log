@@ -13,8 +13,6 @@ import anthropic
 import zipfile
 from werkzeug.utils import secure_filename
 import tiktoken
-import pytesseract
-from pdf2image import convert_from_path
 import io
 import subprocess
 from docx import Document
@@ -23,6 +21,10 @@ from dotenv import load_dotenv
 from werkzeug.serving import WSGIRequestHandler
 import time
 from pathlib import Path
+from google.cloud import vision
+from google.cloud import documentai_v1 as documentai
+from pdf2image import convert_from_path
+import pytesseract
 
 # Configure logging
 logging.basicConfig(
@@ -253,77 +255,102 @@ def init_db():
 # Initialize database before running the app
 init_db()
 
-def extract_text_from_pdf(pdf_path):
-    """Extract text content from a PDF file using both PyPDF2 and OCR if needed."""
+def process_scanned_page(image_path):
+    """Process a scanned page using Google Cloud Vision API."""
     try:
-        logger.info(f"Attempting to extract text from PDF: {pdf_path}")
-        text = ""
-        
-        # First try PyPDF2
-        with open(pdf_path, 'rb') as file:
-            try:
-                reader = PyPDF2.PdfReader(file)
-                logger.info(f"Successfully created PDF reader. Number of pages: {len(reader.pages)}")
-                
-                for i, page in enumerate(reader.pages):
-                    logger.info(f"Processing page {i+1}")
-                    try:
-                        page_text = page.extract_text()
-                        
-                        # If page has less than 100 characters or contains mostly whitespace,
-                        # it might be scanned/image-based
-                        if len(page_text.strip()) < 100 or len(page_text.strip()) / len(page_text) < 0.3:
-                            logger.info(f"Page {i+1} appears to be scanned, attempting OCR")
-                            # Convert PDF page to image with higher DPI for better OCR
-                            images = convert_from_path(pdf_path, first_page=i+1, last_page=i+1, dpi=300)
-                            if images:
-                                # Perform OCR on the image with improved settings
-                                page_text = pytesseract.image_to_string(
-                                    images[0],
-                                    config='--psm 1 --oem 3'  # Automatic page segmentation with LSTM OCR
-                                )
-                                logger.info(f"OCR completed for page {i+1}")
-                        
-                        text += page_text + '\n'
-                        logger.info(f"Successfully processed page {i+1}. Text length: {len(page_text)}")
-                    except Exception as e:
-                        logger.error(f"Error processing page {i+1}: {str(e)}")
-                        # Try OCR as fallback for failed pages
-                        try:
-                            images = convert_from_path(pdf_path, first_page=i+1, last_page=i+1, dpi=300)
-                            if images:
-                                page_text = pytesseract.image_to_string(
-                                    images[0],
-                                    config='--psm 1 --oem 3'
-                                )
-                                text += page_text + '\n'
-                                logger.info(f"Successfully recovered page {i+1} using OCR")
-                        except Exception as ocr_e:
-                            logger.error(f"OCR recovery failed for page {i+1}: {str(ocr_e)}")
-            except Exception as e:
-                logger.error(f"PyPDF2 failed, attempting full document OCR: {str(e)}")
-                # If PyPDF2 fails completely, try converting the entire document
-                try:
-                    images = convert_from_path(pdf_path, dpi=300)
-                    for i, image in enumerate(images):
-                        page_text = pytesseract.image_to_string(
-                            image,
-                            config='--psm 1 --oem 3'
-                        )
-                        text += page_text + '\n'
-                        logger.info(f"Successfully processed page {i+1} with OCR")
-                except Exception as ocr_e:
-                    logger.error(f"Full document OCR failed: {str(ocr_e)}")
-                    return None
-        
-        if not text.strip():
-            logger.warning(f"No text content extracted from {pdf_path}")
-            return None
-            
-        logger.info(f"Successfully extracted text from all pages. Total text length: {len(text)}")
+        client = vision.ImageAnnotatorClient()
+
+        with io.open(image_path, 'rb') as image_file:
+            content = image_file.read()
+
+        image = vision.Image(content=content)
+        response = client.document_text_detection(image=image)
+        text = response.full_text_annotation.text
+
+        if response.error.message:
+            raise Exception(
+                '{}\nFor more info on error messages, check: '
+                'https://cloud.google.com/apis/design/errors'.format(
+                    response.error.message))
+
         return text
     except Exception as e:
-        logger.error(f"Error processing PDF {pdf_path}: {str(e)}")
+        logging.error(f"Error in Google Cloud Vision OCR: {str(e)}")
+        return ""
+
+def extract_text_from_pdf(pdf_path):
+    """Extract text from PDF, using Google Cloud Vision for scanned pages."""
+    try:
+        reader = PyPDF2.PdfReader(pdf_path)
+        logging.info(f"Successfully created PDF reader. Number of pages: {len(reader.pages)}")
+        
+        all_text = []
+        for i, page in enumerate(reader.pages):
+            logging.info(f"Processing page {i+1}")
+            
+            # Try to extract text directly first
+            text = page.extract_text()
+            
+            # If little or no text extracted, page might be scanned
+            if len(text.strip()) < 50:  # Threshold for considering a page as scanned
+                logging.info(f"Page {i+1} appears to be scanned, attempting OCR")
+                
+                # Convert PDF page to image
+                images = convert_from_path(pdf_path, first_page=i+1, last_page=i+1)
+                if images:
+                    # Save the image temporarily
+                    temp_image_path = f"/tmp/page_{i+1}.png"
+                    images[0].save(temp_image_path, 'PNG')
+                    
+                    # Process with Google Cloud Vision
+                    text = process_scanned_page(temp_image_path)
+                    
+                    # Clean up
+                    os.remove(temp_image_path)
+                    
+                    if not text:
+                        logging.error(f"OCR failed for page {i+1}")
+                else:
+                    logging.error(f"Failed to convert page {i+1} to image")
+            else:
+                logging.info(f"Successfully processed page {i+1}. Text length: {len(text)}")
+            
+            all_text.append(text)
+        
+        combined_text = "\n".join(all_text)
+        logging.info(f"Successfully extracted text from all pages. Total text length: {len(combined_text)}")
+        return combined_text
+        
+    except Exception as e:
+        logging.error(f"Error extracting text from PDF: {str(e)}")
+        return ""
+
+def convert_doc_to_pdf(doc_path):
+    """Convert .doc file to PDF using Google Cloud Document AI."""
+    try:
+        client = documentai.DocumentProcessorServiceClient()
+        name = f"projects/{os.getenv('GOOGLE_CLOUD_PROJECT')}/locations/us/processors/{os.getenv('GOOGLE_CLOUD_PROCESSOR_ID')}"
+        
+        with open(doc_path, "rb") as doc_file:
+            document = {"content": doc_file.read(), "mime_type": "application/msword"}
+        
+        request = documentai.ProcessRequest(
+            name=name,
+            document=document
+        )
+        
+        result = client.process_document(request=request)
+        pdf_content = result.document.text
+        
+        # Save as PDF
+        output_pdf = doc_path.rsplit('.', 1)[0] + '.pdf'
+        with open(output_pdf, 'wb') as pdf_file:
+            pdf_file.write(pdf_content)
+        
+        return output_pdf
+        
+    except Exception as e:
+        logging.error(f"Error converting .doc file {doc_path}: {str(e)}")
         return None
 
 def process_zip_file(zip_file_path):
@@ -403,17 +430,14 @@ def process_document(file_path):
         elif ext == '.doc':
             logger.warning(f"Old .doc format detected for {file_path}. Converting to PDF first...")
             try:
-                # Convert .doc to PDF using LibreOffice (if available)
-                pdf_path = file_path + '.pdf'
-                result = subprocess.run(['soffice', '--headless', '--convert-to', 'pdf', '--outdir', 
-                                      os.path.dirname(file_path), file_path], 
-                                     capture_output=True, text=True)
-                if os.path.exists(pdf_path):
+                # Convert .doc to PDF using Google Cloud Document AI
+                pdf_path = convert_doc_to_pdf(file_path)
+                if pdf_path:
                     text = extract_text_from_pdf(pdf_path)
                     os.remove(pdf_path)  # Clean up temporary PDF
                     return text
                 else:
-                    logger.error(f"Failed to convert .doc to PDF: {result.stderr}")
+                    logger.error(f"Failed to convert .doc to PDF: {pdf_path}")
                     return None
             except Exception as e:
                 logger.error(f"Error converting .doc file {file_path}: {str(e)}")
