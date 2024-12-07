@@ -2,7 +2,9 @@ services:
   - type: web
     name: property-log
     env: python
-    buildCommand: pip install -r requirements.txt
+    buildCommand: |
+      apt-get update && apt-get install -y tesseract-ocr tesseract-ocr-eng libreoffice poppler-utils ghostscript
+      pip install -r requirements.txt
     startCommand: gunicorn app:app
     envVars:
       - key: PYTHON_VERSION
@@ -13,12 +15,6 @@ services:
         fromDatabase:
           name: property-log-db
           property: connectionString
-    packages:
-      - tesseract-ocr
-      - tesseract-ocr-eng
-      - libreoffice
-      - poppler-utils
-      - ghostscript
 
 databases:
   - name: property-log-db

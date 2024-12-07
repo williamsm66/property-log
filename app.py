@@ -481,19 +481,18 @@ Provide a clear, concise summary highlighting any red flags."""
             if qa_history:
                 user_message += f"\n\nPrevious Q&A:\n{qa_history}"
 
-        # Create the message
-        message = client.messages.create(
+        # Create the message using the new API format
+        response = client.messages.create(
             model="claude-3-opus-20240229",
-            max_tokens=4000,
-            system=system_prompt,
-            messages=[{
-                "role": "user",
-                "content": user_message
-            }]
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message}
+            ],
+            max_tokens=4000
         )
 
         # Extract the response
-        analysis = message.content[0].text
+        analysis = response.content[0].text
 
         app.logger.info(f"Successfully got analysis from Claude API")
         return analysis
