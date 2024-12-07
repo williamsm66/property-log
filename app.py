@@ -45,34 +45,24 @@ app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
 
 def check_system_dependencies():
-    """Check and log system dependencies."""
-    logger = logging.getLogger(__name__)
-    
-    home = os.environ.get('HOME', '')
-    bin_path = os.path.join(home, 'bin')
-    
-    # Check tesseract
+    """Check if required system dependencies are installed and log their versions."""
     try:
-        tesseract_path = os.path.join(bin_path, 'tesseract')
-        result = subprocess.run([tesseract_path, '--version'], capture_output=True, text=True)
-        version_line = result.stdout.splitlines()[0] if result.returncode == 0 else 'Not found'
-        logger.info(f"Tesseract version: {version_line}")
-        logger.info(f"TESSDATA_PREFIX: {os.environ.get('TESSDATA_PREFIX', 'Not set')}")
+        tesseract_version = subprocess.check_output(['tesseract', '--version'], 
+                                                  stderr=subprocess.STDOUT).decode()
+        logging.info(f"Tesseract version: {tesseract_version.splitlines()[0]}")
     except Exception as e:
-        logger.error(f"Error checking tesseract: {str(e)}")
-    
-    # Check LibreOffice
+        logging.error(f"Error checking tesseract: {e}")
+
     try:
-        soffice_path = os.path.join(bin_path, 'soffice')
-        result = subprocess.run([soffice_path, '--version'], capture_output=True, text=True)
-        version_line = result.stdout.strip() if result.returncode == 0 else 'Not found'
-        logger.info(f"LibreOffice version: {version_line}")
+        libreoffice_version = subprocess.check_output(['soffice', '--version'], 
+                                                    stderr=subprocess.STDOUT).decode()
+        logging.info(f"LibreOffice version: {libreoffice_version.splitlines()[0]}")
     except Exception as e:
-        logger.error(f"Error checking LibreOffice: {str(e)}")
-    
-    # Check system PATH and LD_LIBRARY_PATH
-    logger.info(f"System PATH: {os.environ.get('PATH', 'Not set')}")
-    logger.info(f"LD_LIBRARY_PATH: {os.environ.get('LD_LIBRARY_PATH', 'Not set')}")
+        logging.error(f"Error checking LibreOffice: {e}")
+
+    # Log system PATH and LD_LIBRARY_PATH for debugging
+    logging.info(f"System PATH: {os.environ.get('PATH', 'Not set')}")
+    logging.info(f"LD_LIBRARY_PATH: {os.environ.get('LD_LIBRARY_PATH', 'Not set')}")
 
 check_system_dependencies()
 

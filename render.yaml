@@ -3,15 +3,15 @@ services:
     name: property-log
     env: python
     buildCommand: |
+      pip install -r requirements.txt
       chmod +x setup_binaries.sh
       ./setup_binaries.sh
-      pip install -r requirements.txt
     startCommand: |
       source $HOME/.profile
       gunicorn app:app
     envVars:
       - key: PYTHON_VERSION
-        value: 3.9.12
+        value: 3.9.0
       - key: CLAUDE_API_KEY
         sync: false
       - key: DATABASE_URL
