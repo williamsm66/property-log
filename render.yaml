@@ -3,10 +3,15 @@ services:
     name: property-log
     env: python
     buildCommand: |
+      # Make install script executable
       chmod +x install_packages.sh
-      ./install_packages.sh
+      # Run with sudo to ensure proper permissions
+      sudo ./install_packages.sh || ./install_packages.sh
       pip install -r requirements.txt
-    startCommand: gunicorn app:app
+    startCommand: |
+      # Ensure PATH includes system binaries
+      export PATH="/usr/local/bin:$PATH"
+      gunicorn app:app
     envVars:
       - key: PYTHON_VERSION
         value: 3.9.12
@@ -16,9 +21,11 @@ services:
         fromDatabase:
           name: property-log-db
           property: connectionString
+      - key: PATH
+        value: /usr/local/bin:/usr/bin:/bin:$PATH
 
 databases:
   - name: property-log-db
     databaseName: property_log
-    user: property_log_user
+    user: property_log
     plan: free
