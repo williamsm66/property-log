@@ -44,6 +44,35 @@ WSGIRequestHandler.protocol_version = "HTTP/1.1"
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
 
+def check_system_dependencies():
+    """Check and log system dependencies."""
+    logger = logging.getLogger(__name__)
+    
+    # Check tesseract
+    try:
+        result = subprocess.run(['which', 'tesseract'], capture_output=True, text=True)
+        logger.info(f"Tesseract path: {result.stdout.strip() if result.returncode == 0 else 'Not found'}")
+        if result.returncode == 0:
+            version = subprocess.run(['tesseract', '--version'], capture_output=True, text=True)
+            logger.info(f"Tesseract version: {version.stdout.split('\\n')[0] if version.returncode == 0 else 'Unknown'}")
+    except Exception as e:
+        logger.error(f"Error checking tesseract: {str(e)}")
+    
+    # Check LibreOffice
+    try:
+        result = subprocess.run(['which', 'soffice'], capture_output=True, text=True)
+        logger.info(f"LibreOffice path: {result.stdout.strip() if result.returncode == 0 else 'Not found'}")
+        if result.returncode == 0:
+            version = subprocess.run(['soffice', '--version'], capture_output=True, text=True)
+            logger.info(f"LibreOffice version: {version.stdout.strip() if version.returncode == 0 else 'Unknown'}")
+    except Exception as e:
+        logger.error(f"Error checking LibreOffice: {str(e)}")
+    
+    # Check system PATH
+    logger.info(f"System PATH: {os.environ.get('PATH', 'Not set')}")
+
+check_system_dependencies()
+
 # Add JSON filter for Jinja2
 @app.template_filter('json_loads')
 def json_loads_filter(s):
