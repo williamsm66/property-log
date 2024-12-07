@@ -3,15 +3,11 @@ services:
     name: property-log
     env: python
     buildCommand: |
-      # Make install script executable
-      chmod +x install_packages.sh
-      # Run with sudo to ensure proper permissions
-      sudo ./install_packages.sh || ./install_packages.sh
+      chmod +x setup_binaries.sh
+      ./setup_binaries.sh
       pip install -r requirements.txt
     startCommand: |
-      # Ensure PATH and environment variables are set
-      export PATH="/usr/local/bin:$PATH"
-      export TESSDATA_PREFIX="/usr/local/share/tessdata"
+      source $HOME/.profile
       gunicorn app:app
     envVars:
       - key: PYTHON_VERSION
@@ -23,18 +19,14 @@ services:
           name: property-log-db
           property: connectionString
       - key: PATH
-        value: /usr/local/bin:/usr/bin:/bin:$PATH
+        value: /opt/render/project/src/bin:$PATH
+      - key: LD_LIBRARY_PATH
+        value: /opt/render/project/src/lib:$LD_LIBRARY_PATH
       - key: TESSDATA_PREFIX
-        value: /usr/local/share/tessdata
-    buildFilter:
-      paths:
-        - install_packages.sh
-        - requirements.txt
-        - app.py
-    buildTTL: 30m
+        value: /opt/render/project/src/share/tessdata
 
 databases:
   - name: property-log-db
     databaseName: property_log
-    user: property_log
-    plan: free
+    user: property_log_user
+    plan: starter
