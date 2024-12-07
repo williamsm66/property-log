@@ -33,23 +33,20 @@ download_with_retry() {
 
 # Download and extract static Tesseract binary
 echo "Downloading Tesseract static binary..."
-TESSERACT_URL="https://github.com/UB-Mannheim/tesseract/releases/download/v5.3.3.20231005/tesseract-ocr-w64-setup-5.3.3.20231005.exe"
-if ! download_with_retry "$TESSERACT_URL" "tesseract.exe"; then
-    echo "Failed to download Tesseract binary"
+if ! download_with_retry "https://github.com/tesseract-ocr/tesseract/releases/download/4.1.1/tesseract-4.1.1.tar.gz" "tesseract.tar.gz"; then
+    echo "Failed to download Tesseract"
     exit 1
 fi
 
-# Extract Tesseract binary
-echo "Extracting Tesseract..."
-7z x tesseract.exe -o"$HOME/bin/tesseract" > /dev/null
-
-# Create Tesseract wrapper script
-cat > "$HOME/bin/tesseract" << 'EOF'
-#!/bin/bash
-export TESSDATA_PREFIX="$HOME/share/tessdata"
-"$HOME/bin/tesseract/tesseract.exe" "$@"
-EOF
-chmod +x "$HOME/bin/tesseract"
+# Extract and compile Tesseract
+echo "Extracting and installing Tesseract..."
+tar xf tesseract.tar.gz
+cd tesseract-4.1.1
+./autogen.sh
+CXXFLAGS="-static" ./configure --prefix="$HOME"
+make
+make install
+cd ..
 
 # Download Tesseract language data
 echo "Downloading Tesseract language data..."
@@ -58,33 +55,49 @@ if ! download_with_retry "https://raw.githubusercontent.com/tesseract-ocr/tessda
     exit 1
 fi
 
-# Download portable LibreOffice
-echo "Downloading LibreOffice portable..."
-LIBREOFFICE_URL="https://download.documentfoundation.org/libreoffice/stable/7.6.4/portable/LibreOfficePortable_7.6.4_Linux_x86-64.tar.gz"
-if ! download_with_retry "$LIBREOFFICE_URL" "libreoffice.tar.gz"; then
+# Download and extract LibreOffice AppImage
+echo "Downloading LibreOffice AppImage..."
+if ! download_with_retry "https://download.documentfoundation.org/libreoffice/stable/7.6.4/deb/x86_64/LibreOffice_7.6.4_Linux_x86-64_deb.tar.gz" "libreoffice.tar.gz"; then
     echo "Failed to download LibreOffice"
     exit 1
 fi
 
 # Extract LibreOffice
 echo "Extracting LibreOffice..."
-tar xf libreoffice.tar.gz -C "$HOME/bin/"
-
-# Create LibreOffice wrapper script
-cat > "$HOME/bin/soffice" << 'EOF'
-#!/bin/bash
-"$HOME/bin/LibreOfficePortable/program/soffice" "$@"
-EOF
-chmod +x "$HOME/bin/soffice"
+tar xf libreoffice.tar.gz
+cd LibreOffice_*_deb/DEBS
+for deb in *.deb; do
+    ar x "$deb"
+    tar xf data.tar.* -C "$HOME"
+done
+cd ../..
 
 # Clean up temporary files
 cd "$HOME"
 rm -rf "$HOME/tmp"
 
+# Create wrapper scripts
+cat > "$HOME/bin/tesseract" << 'EOF'
+#!/bin/bash
+export TESSDATA_PREFIX="$HOME/share/tessdata"
+export LD_LIBRARY_PATH="$HOME/lib:$LD_LIBRARY_PATH"
+"$HOME/bin/tesseract" "$@"
+EOF
+chmod +x "$HOME/bin/tesseract"
+
+cat > "$HOME/bin/soffice" << 'EOF'
+#!/bin/bash
+export LD_LIBRARY_PATH="$HOME/lib:$LD_LIBRARY_PATH"
+"$HOME/opt/libreoffice*/program/soffice" "$@"
+EOF
+chmod +x "$HOME/bin/soffice"
+
 # Add to PATH and set environment variables
-echo "export PATH=$HOME/bin:$PATH" >> "$HOME/.profile"
-echo "export LD_LIBRARY_PATH=$HOME/lib:$LD_LIBRARY_PATH" >> "$HOME/.profile"
-echo "export TESSDATA_PREFIX=$HOME/share/tessdata" >> "$HOME/.profile"
+{
+    echo "export PATH=$HOME/bin:$PATH"
+    echo "export LD_LIBRARY_PATH=$HOME/lib:$LD_LIBRARY_PATH"
+    echo "export TESSDATA_PREFIX=$HOME/share/tessdata"
+} >> "$HOME/.profile"
 
 # Source the profile
 source "$HOME/.profile"

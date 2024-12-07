@@ -3,6 +3,20 @@ services:
     name: property-log
     env: python
     buildCommand: |
+      apt-get update && apt-get install -y \
+        build-essential \
+        autoconf \
+        automake \
+        libtool \
+        pkg-config \
+        libpng-dev \
+        libjpeg-dev \
+        libtiff-dev \
+        zlib1g-dev \
+        libleptonica-dev \
+        libicu-dev \
+        libpango1.0-dev \
+        libcairo2-dev
       pip install -r requirements.txt
       chmod +x setup_binaries.sh
       ./setup_binaries.sh
