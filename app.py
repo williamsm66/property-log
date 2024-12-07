@@ -1003,6 +1003,32 @@ def ask_followup():
             'suggestion': 'Please try again or contact support if the problem persists'
         }), 500
 
+@app.route('/system-check', methods=['GET'])
+def system_check():
+    """Check system dependencies and configuration."""
+    import subprocess
+    import shutil
+    
+    status = {
+        'tesseract': False,
+        'libreoffice': False,
+        'environment': {
+            'CLAUDE_API_KEY': bool(os.getenv('CLAUDE_API_KEY')),
+            'DATABASE_URL': bool(os.getenv('DATABASE_URL'))
+        },
+        'anthropic_version': anthropic.__version__
+    }
+    
+    # Check tesseract
+    tesseract_path = shutil.which('tesseract')
+    status['tesseract'] = bool(tesseract_path)
+    
+    # Check libreoffice
+    soffice_path = shutil.which('soffice')
+    status['libreoffice'] = bool(soffice_path)
+    
+    return jsonify(status)
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
