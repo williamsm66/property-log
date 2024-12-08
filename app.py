@@ -47,24 +47,33 @@ app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
 
 def check_system_dependencies():
-    """Check if required system dependencies are installed and log their versions."""
-    try:
-        tesseract_version = subprocess.check_output(['tesseract', '--version'], 
-                                                  stderr=subprocess.STDOUT).decode()
-        logging.info(f"Tesseract version: {tesseract_version.splitlines()[0]}")
-    except Exception as e:
-        logging.error(f"Error checking tesseract: {e}")
+    """Check if required Google Cloud credentials and environment variables are set."""
+    # Check Google Cloud credentials
+    creds_path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
+    if creds_path:
+        logging.info(f"Google Cloud credentials path is set: {creds_path}")
+        if os.path.exists(creds_path):
+            logging.info("Google Cloud credentials file exists")
+        else:
+            logging.error(f"Google Cloud credentials file not found at: {creds_path}")
+    else:
+        logging.error("GOOGLE_APPLICATION_CREDENTIALS environment variable not set")
 
-    try:
-        libreoffice_version = subprocess.check_output(['soffice', '--version'], 
-                                                    stderr=subprocess.STDOUT).decode()
-        logging.info(f"LibreOffice version: {libreoffice_version.splitlines()[0]}")
-    except Exception as e:
-        logging.error(f"Error checking LibreOffice: {e}")
+    # Check other required environment variables
+    project_id = os.environ.get('GOOGLE_CLOUD_PROJECT')
+    if project_id:
+        logging.info(f"Google Cloud Project ID is set: {project_id}")
+    else:
+        logging.error("GOOGLE_CLOUD_PROJECT environment variable not set")
 
-    # Log system PATH and LD_LIBRARY_PATH for debugging
+    processor_id = os.environ.get('GOOGLE_CLOUD_PROCESSOR_ID')
+    if processor_id:
+        logging.info(f"Document AI Processor ID is set: {processor_id}")
+    else:
+        logging.error("GOOGLE_CLOUD_PROCESSOR_ID environment variable not set")
+
+    # Log system PATH for debugging
     logging.info(f"System PATH: {os.environ.get('PATH', 'Not set')}")
-    logging.info(f"LD_LIBRARY_PATH: {os.environ.get('LD_LIBRARY_PATH', 'Not set')}")
 
 check_system_dependencies()
 
@@ -330,25 +339,32 @@ def convert_doc_to_pdf(doc_path):
     try:
         client = documentai.DocumentProcessorServiceClient()
         name = f"projects/{os.getenv('GOOGLE_CLOUD_PROJECT')}/locations/us/processors/{os.getenv('GOOGLE_CLOUD_PROCESSOR_ID')}"
-        
+
+        # Read the document file
         with open(doc_path, "rb") as doc_file:
-            document = {"content": doc_file.read(), "mime_type": "application/msword"}
-        
+            content = doc_file.read()
+
+        # Create the document object
+        raw_document = documentai.RawDocument(
+            content=content,
+            mime_type="application/msword"
+        )
+
+        # Configure the process request
         request = documentai.ProcessRequest(
             name=name,
-            document=document
+            raw_document=raw_document
         )
-        
+
+        # Process the document
         result = client.process_document(request=request)
-        pdf_content = result.document.text
         
         # Save as PDF
         output_pdf = doc_path.rsplit('.', 1)[0] + '.pdf'
         with open(output_pdf, 'wb') as pdf_file:
-            pdf_file.write(pdf_content)
+            pdf_file.write(result.document.content)
         
         return output_pdf
-        
     except Exception as e:
         logging.error(f"Error converting .doc file {doc_path}: {str(e)}")
         return None
@@ -506,7 +522,7 @@ def load_documents(session_id):
 
 def analyze_with_claude(documents_content, processing_summary=None, follow_up_question=None, initial_analysis=None, qa_history=None):
     try:
-        client = anthropic.Client(api_key=os.getenv('CLAUDE_API_KEY'))
+        client = anthropic.Anthropic(api_key=os.getenv('CLAUDE_API_KEY'))
         
         # Prepare the system prompt
         system_prompt = """You are a legal expert analyzing property documents. Focus on:
@@ -527,19 +543,18 @@ Provide a clear, concise summary highlighting any red flags."""
             if qa_history:
                 user_message += f"\n\nPrevious Q&A:\n{qa_history}"
 
-        # Create the message using the appropriate API for version 0.7.8
+        # Create the message using the appropriate API for the latest version
         response = client.messages.create(
             model="claude-3-opus-20240229",
             max_tokens=4000,
-            system=system_prompt,
-            messages=[{
-                "role": "user",
-                "content": user_message
-            }]
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message}
+            ]
         )
 
-        # Extract the response
-        analysis = response.content
+        # Extract the response content
+        analysis = response.content[0].text
 
         app.logger.info(f"Successfully got analysis from Claude API")
         return analysis
