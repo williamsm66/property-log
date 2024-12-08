@@ -335,15 +335,30 @@ def extract_text_from_pdf(pdf_path):
         return ""
 
 def extract_text_from_doc(doc_path):
-    """Extract text directly from a .doc file using python-docx."""
+    """Extract text directly from a Word file using python-docx."""
     try:
-        doc = docx.Document(doc_path)
-        full_text = []
-        for para in doc.paragraphs:
-            full_text.append(para.text)
-        return '\n'.join(full_text)
+        # Try to open as a .docx file regardless of extension
+        try:
+            doc = docx.Document(doc_path)
+            full_text = []
+            for para in doc.paragraphs:
+                if para.text.strip():  # Only add non-empty paragraphs
+                    full_text.append(para.text)
+            return '\n'.join(full_text)
+        except Exception as docx_error:
+            logging.error(f"Error extracting text as .docx: {str(docx_error)}")
+            
+            # If it fails, try to read the file content to check if it's really a Word file
+            with open(doc_path, 'rb') as file:
+                content = file.read(4)
+                if content.startswith(b'PK\x03\x04'):  # This is the ZIP signature that .docx files use
+                    logging.error(f"File appears to be a .docx but couldn't be read")
+                else:
+                    logging.error(f"File does not appear to be a valid Word document")
+            return None
+            
     except Exception as e:
-        logging.error(f"Error extracting text from .doc file {doc_path}: {str(e)}")
+        logging.error(f"Error extracting text from Word file {doc_path}: {str(e)}")
         return None
 
 def process_document(file_path):
@@ -351,14 +366,18 @@ def process_document(file_path):
     try:
         file_extension = os.path.splitext(file_path)[1].lower()
         
-        if file_extension == '.doc' or file_extension == '.docx':
-            # Try to extract text directly from Word document
+        if file_extension in ['.doc', '.docx']:
+            # Try to extract text from Word document
             text = extract_text_from_doc(file_path)
             if text:
                 return text
             else:
                 logging.error(f"Failed to extract text from Word document: {file_path}")
-                return ""
+                # If Word extraction fails, try PDF extraction as fallback
+                try:
+                    return extract_text_from_pdf(file_path)
+                except:
+                    return ""
                 
         elif file_extension == '.pdf':
             return extract_text_from_pdf(file_path)
@@ -412,7 +431,12 @@ def load_documents(session_id):
         return None
 
 def analyze_with_claude(documents_content, processing_summary=None, follow_up_question=None, initial_analysis=None, qa_history=None):
+    """Analyze documents using Claude API."""
     try:
+        # Import anthropic here to ensure we're using the latest version
+        import anthropic
+        
+        # Initialize the client
         client = anthropic.Anthropic(
             api_key=os.getenv('CLAUDE_API_KEY')
         )
@@ -436,18 +460,26 @@ Provide a clear, concise summary highlighting any red flags."""
             if qa_history:
                 user_message += f"\n\nPrevious Q&A:\n{qa_history}"
 
-        # Create the message using the latest API version
-        response = client.messages.create(
-            model="claude-3-opus-20240229",
-            max_tokens=4000,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message}
-            ]
-        )
-
-        app.logger.info(f"Successfully got analysis from Claude API")
-        return response.content[0].text
+        try:
+            # Try the new messages API first
+            response = client.messages.create(
+                model="claude-3-opus-20240229",
+                max_tokens=4000,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message}
+                ]
+            )
+            return response.content[0].text
+        except AttributeError:
+            # Fall back to the older completion API if messages is not available
+            response = client.completion(
+                model="claude-3-opus-20240229",
+                max_tokens=4000,
+                prompt=f"\n\nHuman: {user_message}\n\nAssistant: ",
+                system=system_prompt,
+            )
+            return response.completion
 
     except Exception as e:
         error_msg = f"Failed to get analysis from Claude API: {str(e)}"
