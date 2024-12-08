@@ -350,34 +350,53 @@ def convert_doc_to_pdf(doc_path):
         with open(doc_path, "rb") as doc_file:
             content = doc_file.read()
 
-        # Create the document object
+        # Create the document object - treat it as a PDF
         raw_document = documentai.RawDocument(
             content=content,
-            mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            mime_type="application/pdf"
         )
 
         # Configure the process request
         request = documentai.ProcessRequest(
             name=name,
-            raw_document=raw_document,
-            skip_human_review=True
+            raw_document=raw_document
         )
 
         # Process the document
-        operation = client.process_document(request=request)
-        document = operation.document
-
-        # Save as PDF
-        output_pdf = doc_path.rsplit('.', 1)[0] + '.pdf'
-        
-        # The processed document should contain the converted content
-        if document and document.content:
-            with open(output_pdf, 'wb') as pdf_file:
-                pdf_file.write(document.content)
-            logging.info(f"Successfully converted {doc_path} to PDF")
-            return output_pdf
-        else:
-            logging.error(f"No content in processed document for {doc_path}")
+        try:
+            result = client.process_document(request=request)
+            
+            if result.document:
+                # Extract text from the processed document
+                text = result.document.text
+                
+                # Create a PDF with the extracted text
+                output_pdf = doc_path.rsplit('.', 1)[0] + '.pdf'
+                
+                # Use reportlab to create a PDF with the extracted text
+                from reportlab.pdfgen import canvas
+                from reportlab.lib.pagesizes import letter
+                
+                c = canvas.Canvas(output_pdf, pagesize=letter)
+                y = 750  # Start near the top of the page
+                
+                # Split text into lines and write to PDF
+                for line in text.split('\n'):
+                    if y < 50:  # If we're near the bottom of the page
+                        c.showPage()  # Start a new page
+                        y = 750  # Reset to top of new page
+                    c.drawString(50, y, line)
+                    y -= 12  # Move down for next line
+                
+                c.save()
+                logging.info(f"Successfully converted {doc_path} to PDF")
+                return output_pdf
+            else:
+                logging.error(f"No document in result for {doc_path}")
+                return None
+                
+        except Exception as process_error:
+            logging.error(f"Error processing document: {str(process_error)}")
             return None
 
     except Exception as e:
@@ -537,7 +556,7 @@ def load_documents(session_id):
 
 def analyze_with_claude(documents_content, processing_summary=None, follow_up_question=None, initial_analysis=None, qa_history=None):
     try:
-        client = anthropic.Anthropic(api_key=os.getenv('CLAUDE_API_KEY'))
+        client = anthropic.Client(api_key=os.getenv('CLAUDE_API_KEY'))
         
         # Prepare the system prompt
         system_prompt = """You are a legal expert analyzing property documents. Focus on:
@@ -558,24 +577,16 @@ Provide a clear, concise summary highlighting any red flags."""
             if qa_history:
                 user_message += f"\n\nPrevious Q&A:\n{qa_history}"
 
-        # Create the message using the appropriate API for the latest version
-        message = client.messages.create(
+        # Create the message using the appropriate API
+        message = client.completion(
             model="claude-3-opus-20240229",
             max_tokens=4000,
+            prompt=f"\n\nHuman: {user_message}\n\nAssistant: ",
             system=system_prompt,
-            messages=[
-                {
-                    "role": "user",
-                    "content": user_message
-                }
-            ]
         )
 
-        # Extract the response content
-        analysis = message.content
-
         app.logger.info(f"Successfully got analysis from Claude API")
-        return analysis
+        return message.completion
 
     except Exception as e:
         error_msg = f"Failed to get analysis from Claude API: {str(e)}"

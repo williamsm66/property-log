@@ -19,3 +19,4 @@ pytesseract==0.3.10
 poppler-utils
 google-cloud-vision==3.4.4
 google-cloud-documentai==2.20.1
+reportlab==4.1.0
