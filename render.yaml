@@ -24,8 +24,12 @@ services:
       pip install -r requirements.txt
       chmod +x setup_binaries.sh
       ./setup_binaries.sh
+      # Create directory for Google Cloud credentials
+      mkdir -p /opt/render/project/src/.google
+      echo "$GOOGLE_CLOUD_CREDENTIALS" > /opt/render/project/src/.google/credentials.json
     startCommand: |
       source $HOME/.profile
+      export GOOGLE_APPLICATION_CREDENTIALS="/opt/render/project/src/.google/credentials.json"
       gunicorn app:app
     envVars:
       - key: PYTHON_VERSION
@@ -42,8 +46,9 @@ services:
         value: /opt/render/project/src/lib:$LD_LIBRARY_PATH
       - key: TESSDATA_PREFIX
         value: /opt/render/project/src/share/tessdata
-
-databases:
+      - key: GOOGLE_CLOUD_CREDENTIALS
+        sync: false  # This will be set manually in Render dashboard
+  databases:
   - name: property-log-db
     databaseName: property_log
     user: property_log_user

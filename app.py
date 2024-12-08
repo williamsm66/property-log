@@ -341,13 +341,50 @@ def extract_text_from_doc(doc_path):
         # Try python-docx first
         try:
             doc = Document(doc_path)
-            return '\n'.join([paragraph.text for paragraph in doc.paragraphs])
+            text = '\n'.join([paragraph.text for paragraph in doc.paragraphs])
+            if text.strip():
+                logger.info(f"Successfully extracted text from {doc_path} using python-docx")
+                return text
         except ImportError:
             logger.error("python-docx not properly installed")
-            return None
         except Exception as e:
-            logger.error(f"Error processing DOCX file {doc_path}: {str(e)}")
+            logger.error(f"Error processing DOCX file with python-docx: {str(e)}")
+
+        # If python-docx fails or returns no text, try converting to PDF
+        logger.info(f"Attempting to convert {doc_path} to PDF for processing")
+        try:
+            # Create temp directory for conversion
+            with tempfile.TemporaryDirectory() as temp_dir:
+                # Convert to PDF using Google Cloud Document AI
+                client = documentai.DocumentProcessorServiceClient()
+                name = f"projects/property-log-444101/locations/us/processors/{os.getenv('GOOGLE_DOCAI_PROCESSOR_ID')}"
+                
+                with open(doc_path, "rb") as doc_file:
+                    document = {"content": doc_file.read(), "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
+                
+                request = documentai.ProcessRequest(
+                    name=name,
+                    document=document,
+                    process_options=documentai.ProcessOptions(
+                        output_type=documentai.ProcessOptions.OutputType.PDF
+                    )
+                )
+                
+                result = client.process_document(request=request)
+                pdf_content = result.document.content
+                
+                # Save the PDF temporarily
+                pdf_path = os.path.join(temp_dir, "converted.pdf")
+                with open(pdf_path, "wb") as pdf_file:
+                    pdf_file.write(pdf_content)
+                
+                # Extract text from the PDF
+                return extract_text_from_pdf(pdf_path)
+                
+        except Exception as convert_error:
+            logger.error(f"Error converting document to PDF: {str(convert_error)}")
             return None
+            
     except Exception as e:
         logger.error(f"Error in extract_text_from_doc: {str(e)}")
         return None
@@ -359,16 +396,8 @@ def process_document(file_path):
         
         if ext == '.pdf':
             return extract_text_from_pdf(file_path)
-        elif ext == '.docx':
-            try:
-                doc = Document(file_path)
-                return '\n'.join([paragraph.text for paragraph in doc.paragraphs])
-            except ImportError:
-                logger.error("python-docx not properly installed")
-                return None
-            except Exception as e:
-                logger.error(f"Error processing DOCX file {file_path}: {str(e)}")
-                return None
+        elif ext in ['.docx', '.doc']:
+            return extract_text_from_doc(file_path)
         else:
             logger.warning(f"Unsupported file type: {ext} for file {file_path}")
             return None
@@ -1007,7 +1036,7 @@ def scrape_property():
 def toggle_auction(property_id):
     try:
         data = request.get_json()
-        property = Property.query.get_or_404(property_id)
+        property = Property.query.get(property_id)
         property.is_auction = data['is_auction']
         db.session.commit()
         return jsonify({'success': True})
@@ -1018,7 +1047,7 @@ def toggle_auction(property_id):
 def legal_pack_analyzer(property_id):
     """Render the legal pack analyzer page for a specific property."""
     # Get the property details if needed
-    property_data = Property.query.get_or_404(property_id)
+    property_data = Property.query.get(property_id)
     return render_template('legal_pack_analyzer.html', property=property_data, property_id=property_id)
 
 @app.route('/analyze-legal-pack', methods=['POST'])
