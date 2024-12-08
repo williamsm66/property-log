@@ -365,32 +365,116 @@ def extract_text_from_doc(doc_path):
 def process_document(file_path):
     """Process a single document and return its text content."""
     try:
-        file_extension = os.path.splitext(file_path)[1].lower()
+        _, ext = os.path.splitext(file_path.lower())
         
-        if file_extension in ['.doc', '.docx']:
-            # Try to extract text using python-docx
-            text = extract_text_from_doc(file_path)
-            if text:
-                return text
-            
-            # If python-docx fails, try PDF extraction as fallback
-            logging.warning(f"python-docx failed for {file_path}, trying PDF extraction")
-            try:
-                return extract_text_from_pdf(file_path)
-            except Exception as pdf_error:
-                logging.error(f"PDF extraction also failed: {str(pdf_error)}")
-                return ""
-                
-        elif file_extension == '.pdf':
+        if ext == '.pdf':
             return extract_text_from_pdf(file_path)
-            
+        elif ext in ['.docx', '.doc']:
+            try:
+                # First try python-docx
+                doc = Document(file_path)
+                text = '\n'.join([paragraph.text for paragraph in doc.paragraphs if paragraph.text.strip()])
+                if text.strip():
+                    return text
+                    
+                # If no text was extracted but no error occurred, try PDF extraction
+                logger.warning(f"No text extracted from {file_path} using python-docx, trying PDF extraction")
+                return extract_text_from_pdf(file_path)
+            except Exception as docx_error:
+                logger.error(f"python-docx extraction failed: {str(docx_error)}")
+                try:
+                    # If python-docx fails, try converting to PDF first
+                    pdf_path = f"{file_path}.pdf"
+                    try:
+                        # Try using LibreOffice for conversion
+                        result = subprocess.run(
+                            ['soffice', '--headless', '--convert-to', 'pdf', '--outdir', os.path.dirname(file_path), file_path],
+                            capture_output=True,
+                            text=True,
+                            timeout=30  # Add timeout to prevent hanging
+                        )
+                        if os.path.exists(pdf_path):
+                            text = extract_text_from_pdf(pdf_path)
+                            os.remove(pdf_path)  # Clean up
+                            if text:
+                                return text
+                    except Exception as convert_error:
+                        logger.error(f"LibreOffice conversion failed: {str(convert_error)}")
+                    
+                    # If LibreOffice fails, try direct PDF extraction
+                    return extract_text_from_pdf(file_path)
+                except Exception as pdf_error:
+                    logger.error(f"PDF extraction failed: {str(pdf_error)}")
+                    return None
         else:
-            logging.error(f"Unsupported file type: {file_extension}")
-            return ""
-            
+            logger.warning(f"Unsupported file type: {ext} for file {file_path}")
+            return None
     except Exception as e:
-        logging.error(f"Error in process_document: {str(e)}")
-        return ""
+        logger.error(f"Error processing file {file_path}: {str(e)}")
+        return None
+
+def process_zip_file(zip_file_path):
+    """Process a ZIP file and extract its contents."""
+    processed_files = []
+    failed_files = []
+    processing_summary = []
+    total_tokens = 0
+    
+    with tempfile.TemporaryDirectory() as temp_dir:
+        with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
+            # Extract files while filtering out macOS metadata
+            for file_info in zip_ref.filelist:
+                if not file_info.filename.startswith('__MACOSX/') and not file_info.filename.startswith('._'):
+                    zip_ref.extract(file_info, temp_dir)
+            
+            # Process each file in the zip
+            for root, _, files in os.walk(temp_dir):
+                for file in sorted(files):  # Sort files to ensure consistent processing order
+                    if file.startswith('.') or file.startswith('~'):  # Skip hidden and temporary files
+                        continue
+                        
+                    file_path = os.path.join(root, file)
+                    try:
+                        content = process_document(file_path)
+                        if content and content.strip():
+                            num_tokens = count_tokens(content)
+                            total_tokens += num_tokens
+                            processed_files.append({
+                                'name': file,
+                                'content': content,
+                                'length': len(content),
+                                'tokens': num_tokens
+                            })
+                            processing_summary.append(f"Successfully processed {file} ({num_tokens} tokens)")
+                        else:
+                            failed_files.append(file)
+                            processing_summary.append(f"Failed to extract content from {file}")
+                    except Exception as e:
+                        failed_files.append(file)
+                        processing_summary.append(f"Error processing {file}: {str(e)}")
+                        logger.error(f"Error processing {file}: {str(e)}")
+
+    # Save processing results
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    results = {
+        "documents": processed_files,
+        "failed_files": failed_files,
+        "processed_at": datetime.now().isoformat(),
+        "total_documents": len(processed_files) + len(failed_files),
+        "total_tokens": total_tokens,
+        "processing_summary": processing_summary
+    }
+    
+    results_filename = f"processing_results_{timestamp}.json"
+    results_filepath = STORAGE_DIR / results_filename
+    
+    with open(results_filepath, 'w', encoding='utf-8') as f:
+        json.dump(results, f, indent=2, ensure_ascii=False)
+    
+    logger.info(f"Processing results saved to {results_filepath}")
+    logger.info(f"Total tokens across all documents: {total_tokens}")
+    
+    return processed_files, failed_files, "\n".join(processing_summary)
 
 def save_documents(session_id, processed_files, initial_analysis=None, qa_history=None):
     """Save documents and analysis history to disk."""
@@ -981,20 +1065,9 @@ def analyze_legal_pack():
             
             if uploaded_file.filename.endswith('.zip'):
                 # Extract and process ZIP contents
-                with zipfile.ZipFile(temp_zip, 'r') as zip_ref:
-                    zip_ref.extractall(temp_dir)
-                    
-                    # Process each file in the ZIP
-                    for root, dirs, files in os.walk(temp_dir):
-                        for file in files:
-                            if file.lower().endswith(('.pdf', '.doc', '.docx')):
-                                file_path = os.path.join(root, file)
-                                text_content = process_document(file_path)
-                                if text_content:
-                                    documents_content.append({
-                                        'name': file,
-                                        'content': text_content
-                                    })
+                processed_files, failed_files, processing_summary = process_zip_file(temp_zip)
+                if processed_files:
+                    documents_content = processed_files
             else:
                 # Process single file
                 text_content = process_document(temp_zip)
