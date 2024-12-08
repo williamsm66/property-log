@@ -336,7 +336,7 @@ def extract_text_from_pdf(pdf_path):
         return ""
 
 def extract_text_from_doc(doc_path):
-    """Extract text from a Word file."""
+    """Extract text from a Word file (.doc or .docx)."""
     try:
         # Try python-docx first
         try:
@@ -345,46 +345,36 @@ def extract_text_from_doc(doc_path):
             if text.strip():
                 logger.info(f"Successfully extracted text from {doc_path} using python-docx")
                 return text
-        except ImportError:
-            logger.error("python-docx not properly installed")
         except Exception as e:
-            logger.error(f"Error processing DOCX file with python-docx: {str(e)}")
+            logger.error(f"Error processing file with python-docx: {str(e)}")
 
-        # If python-docx fails or returns no text, try converting to PDF
-        logger.info(f"Attempting to convert {doc_path} to PDF for processing")
+        # If python-docx fails, try using antiword for .doc files
+        if doc_path.lower().endswith('.doc'):
+            try:
+                logger.info(f"Attempting to extract text using antiword from {doc_path}")
+                result = subprocess.run(['antiword', doc_path], capture_output=True, text=True)
+                if result.stdout.strip():
+                    logger.info(f"Successfully extracted text using antiword from {doc_path}")
+                    return result.stdout
+                logger.error(f"Antiword returned empty text for {doc_path}")
+            except Exception as e:
+                logger.error(f"Error using antiword: {str(e)}")
+
+        # If both methods fail, try using textract as a last resort
         try:
-            # Create temp directory for conversion
-            with tempfile.TemporaryDirectory() as temp_dir:
-                # Convert to PDF using Google Cloud Document AI
-                client = documentai.DocumentProcessorServiceClient()
-                name = f"projects/property-log-444101/locations/us/processors/{os.getenv('GOOGLE_DOCAI_PROCESSOR_ID')}"
-                
-                with open(doc_path, "rb") as doc_file:
-                    document = {"content": doc_file.read(), "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
-                
-                request = documentai.ProcessRequest(
-                    name=name,
-                    document=document,
-                    process_options=documentai.ProcessOptions(
-                        output_type=documentai.ProcessOptions.OutputType.PDF
-                    )
-                )
-                
-                result = client.process_document(request=request)
-                pdf_content = result.document.content
-                
-                # Save the PDF temporarily
-                pdf_path = os.path.join(temp_dir, "converted.pdf")
-                with open(pdf_path, "wb") as pdf_file:
-                    pdf_file.write(pdf_content)
-                
-                # Extract text from the PDF
-                return extract_text_from_pdf(pdf_path)
-                
-        except Exception as convert_error:
-            logger.error(f"Error converting document to PDF: {str(convert_error)}")
-            return None
-            
+            logger.info(f"Attempting to extract text using textract from {doc_path}")
+            import textract
+            text = textract.process(doc_path).decode('utf-8')
+            if text.strip():
+                logger.info(f"Successfully extracted text using textract from {doc_path}")
+                return text
+            logger.error(f"Textract returned empty text for {doc_path}")
+        except Exception as e:
+            logger.error(f"Error using textract: {str(e)}")
+
+        logger.error(f"All text extraction methods failed for {doc_path}")
+        return None
+
     except Exception as e:
         logger.error(f"Error in extract_text_from_doc: {str(e)}")
         return None
