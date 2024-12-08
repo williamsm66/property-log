@@ -21,7 +21,7 @@ services:
         poppler-utils \
         tesseract-ocr \
         tesseract-ocr-eng \
-        antiword
+        catdoc
       pip install -r requirements.txt
       chmod +x setup_binaries.sh
       ./setup_binaries.sh
