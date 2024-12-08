@@ -338,7 +338,13 @@ def convert_doc_to_pdf(doc_path):
     """Convert .doc file to PDF using Google Cloud Document AI."""
     try:
         client = documentai.DocumentProcessorServiceClient()
-        name = f"projects/{os.getenv('GOOGLE_CLOUD_PROJECT')}/locations/us/processors/{os.getenv('GOOGLE_CLOUD_PROCESSOR_ID')}"
+        
+        # Use the OCR processor
+        location = "us"  # Format is 'us' or 'eu'
+        processor_id = os.getenv('GOOGLE_CLOUD_PROCESSOR_ID')
+        project_id = os.getenv('GOOGLE_CLOUD_PROJECT')
+        
+        name = f"projects/{project_id}/locations/{location}/processors/{processor_id}"
 
         # Read the document file
         with open(doc_path, "rb") as doc_file:
@@ -347,24 +353,33 @@ def convert_doc_to_pdf(doc_path):
         # Create the document object
         raw_document = documentai.RawDocument(
             content=content,
-            mime_type="application/msword"
+            mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
 
         # Configure the process request
         request = documentai.ProcessRequest(
             name=name,
-            raw_document=raw_document
+            raw_document=raw_document,
+            skip_human_review=True
         )
 
         # Process the document
-        result = client.process_document(request=request)
-        
+        operation = client.process_document(request=request)
+        document = operation.document
+
         # Save as PDF
         output_pdf = doc_path.rsplit('.', 1)[0] + '.pdf'
-        with open(output_pdf, 'wb') as pdf_file:
-            pdf_file.write(result.document.content)
         
-        return output_pdf
+        # The processed document should contain the converted content
+        if document and document.content:
+            with open(output_pdf, 'wb') as pdf_file:
+                pdf_file.write(document.content)
+            logging.info(f"Successfully converted {doc_path} to PDF")
+            return output_pdf
+        else:
+            logging.error(f"No content in processed document for {doc_path}")
+            return None
+
     except Exception as e:
         logging.error(f"Error converting .doc file {doc_path}: {str(e)}")
         return None
@@ -544,17 +559,20 @@ Provide a clear, concise summary highlighting any red flags."""
                 user_message += f"\n\nPrevious Q&A:\n{qa_history}"
 
         # Create the message using the appropriate API for the latest version
-        response = client.messages.create(
+        message = client.messages.create(
             model="claude-3-opus-20240229",
             max_tokens=4000,
+            system=system_prompt,
             messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message}
+                {
+                    "role": "user",
+                    "content": user_message
+                }
             ]
         )
 
         # Extract the response content
-        analysis = response.content[0].text
+        analysis = message.content
 
         app.logger.info(f"Successfully got analysis from Claude API")
         return analysis
