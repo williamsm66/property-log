@@ -433,73 +433,220 @@ def load_documents(session_id):
         return None
 
 def analyze_with_claude(documents_content, processing_summary=None, follow_up_question=None, initial_analysis=None, qa_history=None):
-    """Analyze documents using Claude API."""
+    """Analyze all documents together using Claude API."""
+    token_summary = None
     try:
-        import anthropic
-        
-        # Initialize the client
+        # Initialize the Anthropic client with the API key from environment variables
         api_key = os.getenv('CLAUDE_API_KEY')
+        if not api_key:
+            raise ValueError("CLAUDE_API_KEY environment variable is not set")
+        
+        logger.info(f"Analyzing documents with Claude (follow_up: {'yes' if follow_up_question else 'no'})")
+        
         client = anthropic.Anthropic(api_key=api_key)
         
-        # Prepare the system prompt
-        system_prompt = """You are a legal expert analyzing property documents. Focus on:
-1. Key risks and issues
-2. Important dates and deadlines
-3. Financial obligations
-4. Legal restrictions
-5. Property boundaries and rights
-Provide a clear, concise summary highlighting any red flags."""
-
-        # Prepare the messages
-        messages = [
-            {
-                "role": "system",
-                "content": system_prompt
-            }
-        ]
-
-        # Add document content
-        user_content = "Please analyze these property documents:\n\n"
+        # Prepare the prompt and track tokens
+        total_tokens = 0
+        documents_text = ""
+        document_tokens = []
+        
         for doc in documents_content:
-            user_content += f"Document: {doc['name']}\n{doc['content']}\n\n"
-            
+            doc_text = f"\n{'='*50}\nDOCUMENT: {doc['name']}\n{'='*50}\n{doc['content']}"
+            doc_tokens = count_tokens(doc_text)
+            total_tokens += doc_tokens
+            documents_text += doc_text
+            document_tokens.append({
+                'name': doc['name'],
+                'tokens': doc_tokens,
+                'length': len(doc['content'])
+            })
+            logger.info(f"Document {doc['name']}: {doc_tokens} tokens")
+        
+        logger.info(f"Total tokens for all documents: {total_tokens}")
+        
+        # Create token usage summary
+        token_summary = {
+            'total_tokens': total_tokens,
+            'documents': document_tokens,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        # Set max tokens for output (4096 for Claude 3 Sonnet)
+        max_output_tokens = 4096
+        
+        # Prepare the prompt
         if follow_up_question:
-            user_content = f"Based on the documents above, please answer: {follow_up_question}"
-            if qa_history:
-                user_content += f"\n\nPrevious Q&A:\n{qa_history}"
-                
-        messages.append({
-            "role": "user",
-            "content": user_content
-        })
-
-        try:
-            # Try messages API first
-            response = client.messages.create(
-                model="claude-3-opus-20240229",
-                max_tokens=4000,
-                messages=messages
-            )
-            return response.content[0].text
-        except Exception as messages_error:
-            logging.error(f"Messages API failed: {str(messages_error)}")
+            # Log the context we're using
+            logger.info(f"Using initial analysis of length: {len(initial_analysis) if initial_analysis else 0}")
+            logger.info(f"Using QA history of length: {len(qa_history) if qa_history else 0}")
             
-            # Fall back to completion API
-            try:
-                response = client.completions.create(
-                    model="claude-3-opus-20240229",
-                    max_tokens=4000,
-                    prompt=f"{system_prompt}\n\nHuman: {user_content}\n\nAssistant:",
-                )
-                return response.completion
-            except Exception as completion_error:
-                logging.error(f"Completion API failed: {str(completion_error)}")
-                raise
+            context = "Here is the initial analysis of the legal pack:\n\n"
+            context += initial_analysis + "\n\n"
+            
+            if qa_history:
+                context += "Previous questions and answers:\n\n"
+                for qa in qa_history:
+                    context += f"Q: {qa['question']}\nA: {qa['answer']}\n\n"
+            
+            system_prompt = """You are an expert conveyancer analyzing a legal pack for an auction property. You have previously provided a comprehensive analysis, and now need to answer a specific follow-up question."""
+            
+            user_prompt = f"""Previous context:
+{context}
 
+New question: {follow_up_question}
+
+Instructions for answering the follow-up question:
+1. FOCUS SPECIFICALLY on answering the new question asked, using the documents as reference
+2. CITE SPECIFIC DOCUMENTS AND SECTIONS that support your answer (e.g., "According to the Title Register, section X...")
+3. If the question cannot be answered with the available documents, explicitly state this
+4. If there are any risks or concerns related to the question, highlight them
+5. If additional documentation or professional advice would be helpful, recommend it
+6. Consider any relevant information from the previous analysis and Q&A history
+
+Format your response in these sections:
+1. ANSWER SUMMARY
+- Direct answer to the question
+- Key documents referenced
+- Confidence level in the answer (High/Medium/Low) with explanation
+
+2. DETAILED EXPLANATION
+- Supporting evidence from documents (with specific citations)
+- Analysis of any ambiguities or uncertainties
+- Related risks or concerns
+
+3. RECOMMENDATIONS
+- Additional documentation needed (if any)
+- Professional advice recommended (if any)
+- Next steps or actions to consider"""
+
+            try:
+                logger.info("Sending follow-up question to Claude")
+                response = client.messages.create(
+                    model="claude-3-sonnet-20240229",
+                    max_tokens=max_output_tokens,
+                    system=system_prompt,
+                    messages=[{
+                        "role": "user",
+                        "content": f"Documents to analyze:\n{documents_text}\n\n{user_prompt}"
+                    }],
+                    temperature=0
+                )
+                logger.info("Successfully received response from Claude for follow-up")
+            except Exception as api_error:
+                logger.error(f"Claude API error during follow-up: {str(api_error)}")
+                raise ValueError(f"Failed to get answer from Claude API: {str(api_error)}")
+
+        else:
+            system_prompt = """You are an expert conveyancer analyzing a legal pack for an auction property. Your task is to provide a comprehensive analysis of all the legal documents provided, with special focus on identifying potential risks and issues."""
+            
+            user_prompt = f"""As a conveyancer, thoroughly analyze this legal pack for an auction property. Your analysis should be comprehensive and focus on identifying ALL potential risks and important information.
+
+Key Instructions:
+1. READ AND ANALYZE EVERY DOCUMENT THOROUGHLY
+2. Do not skip or skim any documents
+3. Pay special attention to:
+   - Hidden risks or potential issues
+   - Environmental concerns (including radon, contamination, flooding)
+   - Legal restrictions or covenants
+   - Financial obligations
+   - Development constraints
+   - Risks to a development of a house of multiple occupation 
+   - Outstanding liens, legal issues, or restrictions
+   - Electricity pylons
+   - Mining shafts
+   - Past mining activity
+   - Non standard construction
+   - Limited/no title guarantee
+   - Non removed financial charges
+   - Restrictive covenants
+   - Auction fees
+   - Seller legal costs
+   - Tenants in situ with problematic contracts
+   - Probate sale without authorizations
+   - Subsidence from past land activity
+   - Non regulated past building work
+   - Japanese knotweed   
+4. If you find conflicting information between documents, highlight this
+5. If critical information appears to be missing, explicitly note this
+
+Format your response in these sections:
+
+1. EXECUTIVE SUMMARY
+- Brief overview of the property
+- Top 3-5 most significant findings (good or bad)
+- Overall risk assessment (Low/Medium/High) with explanation
+
+2. KEY FINDINGS
+For each finding:
+- Document source: [Name of document]
+- Finding: [Clear description]
+- Risk Level: [Low/Medium/High]
+- Implications: [What this means for the buyer]
+- Recommended Action: [What the buyer should do about this]
+
+3. DETAILED ANALYSIS
+Group findings by category:
+- Legal Status & Restrictions
+- Physical Property Condition
+- Environmental Factors
+- Financial Obligations
+- Development Potential
+- Local Area Considerations
+
+4. MISSING INFORMATION
+List any important information that appears to be missing from the legal pack
+
+5. RECOMMENDATIONS
+- Immediate actions needed
+- Further investigations required
+- Professional services needed
+- Questions to ask the seller/agent"""
+
+            try:
+                logger.info("Sending initial analysis request to Claude")
+                response = client.messages.create(
+                    model="claude-3-sonnet-20240229",
+                    max_tokens=max_output_tokens,
+                    system=system_prompt,
+                    messages=[{
+                        "role": "user",
+                        "content": f"Documents to analyze:\n{documents_text}\n\n{user_prompt}"
+                    }],
+                    temperature=0
+                )
+                logger.info("Successfully received response from Claude for initial analysis")
+            except Exception as api_error:
+                logger.error(f"Claude API error during initial analysis: {str(api_error)}")
+                raise ValueError(f"Failed to get analysis from Claude API: {str(api_error)}")
+
+        # Extract the analysis from the response
+        if not response or not response.content or not response.content[0].text:
+            raise ValueError("Empty response from Claude API")
+            
+        analysis = response.content[0].text
+        logger.info(f"Received analysis of length: {len(analysis)}")
+        
+        # Update token summary with prompt tokens
+        token_summary['prompt_tokens'] = total_tokens
+        
+        # Return appropriate key based on whether this is a follow-up or initial analysis
+        if follow_up_question:
+            return {
+                'answer': analysis,
+                'token_usage': token_summary
+            }
+        else:
+            return {
+                'analysis': analysis,
+                'token_usage': token_summary
+            }
+        
     except Exception as e:
-        error_msg = f"Failed to get analysis from Claude API: {str(e)}"
-        app.logger.error(error_msg)
-        raise Exception(error_msg)
+        error_msg = f"Error in analyze_with_claude: {str(e)}"
+        logger.error(error_msg)
+        if token_summary:
+            logger.error(f"Token summary at error: {token_summary}")
+        raise ValueError(error_msg)
 
 @app.route('/')
 def home():
