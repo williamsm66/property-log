@@ -517,16 +517,24 @@ def load_documents(session_id):
         return None
 
 def analyze_with_claude(documents_content, processing_summary=None, follow_up_question=None, initial_analysis=None, qa_history=None):
-    """Analyze documents using Claude API."""
+    """Analyze all documents together using Claude API."""
+    token_summary = None
     try:
         # Initialize the Anthropic client with the API key from environment variables
         api_key = os.getenv('CLAUDE_API_KEY')
         if not api_key:
+            logger.error("CLAUDE_API_KEY environment variable is not set")
             raise ValueError("CLAUDE_API_KEY environment variable is not set")
         
         logger.info(f"Analyzing documents with Claude (follow_up: {'yes' if follow_up_question else 'no'})")
+        logger.info(f"API Key length: {len(api_key)}")  # Log key length for verification
         
-        client = anthropic.Client(api_key=api_key)
+        try:
+            client = anthropic.Anthropic(api_key=api_key)
+            logger.info("Successfully initialized Anthropic client")
+        except Exception as client_error:
+            logger.error(f"Failed to initialize Anthropic client: {str(client_error)}")
+            raise ValueError(f"Failed to initialize Anthropic client: {str(client_error)}")
         
         # Prepare the prompt and track tokens
         total_tokens = 0
@@ -604,17 +612,24 @@ Format your response in these sections:
 
             try:
                 logger.info("Sending follow-up question to Claude")
-                response = client.completion(
-                    prompt=f"{anthropic.HUMAN_PROMPT} {documents_text}\n\n{user_prompt}{anthropic.AI_PROMPT}",
-                    model="claude-2",
-                    max_tokens_to_sample=max_output_tokens,
-                    temperature=0,
-                    stop_sequences=[anthropic.HUMAN_PROMPT]
+                response = client.messages.create(
+                    model="claude-3-sonnet-20240229",
+                    max_tokens=max_output_tokens,
+                    system=system_prompt,
+                    messages=[{
+                        "role": "user",
+                        "content": f"Documents to analyze:\n{documents_text}\n\n{user_prompt}"
+                    }],
+                    temperature=0
                 )
                 logger.info("Successfully received response from Claude for follow-up")
-                analysis = response.completion
+                logger.info(f"Response type: {type(response)}")
+                logger.info(f"Response attributes: {dir(response)}")
+                analysis = response.content
             except Exception as api_error:
                 logger.error(f"Claude API error during follow-up: {str(api_error)}")
+                logger.error(f"API error type: {type(api_error)}")
+                logger.error(f"API error details: {api_error.__dict__}")
                 raise ValueError(f"Failed to get answer from Claude API: {str(api_error)}")
 
         else:
@@ -685,17 +700,24 @@ List any important information that appears to be missing from the legal pack
 
             try:
                 logger.info("Sending initial analysis request to Claude")
-                response = client.completion(
-                    prompt=f"{anthropic.HUMAN_PROMPT} {documents_text}\n\n{user_prompt}{anthropic.AI_PROMPT}",
-                    model="claude-2",
-                    max_tokens_to_sample=max_output_tokens,
-                    temperature=0,
-                    stop_sequences=[anthropic.HUMAN_PROMPT]
+                response = client.messages.create(
+                    model="claude-3-sonnet-20240229",
+                    max_tokens=max_output_tokens,
+                    system=system_prompt,
+                    messages=[{
+                        "role": "user",
+                        "content": f"Documents to analyze:\n{documents_text}\n\n{user_prompt}"
+                    }],
+                    temperature=0
                 )
                 logger.info("Successfully received response from Claude for initial analysis")
-                analysis = response.completion
+                logger.info(f"Response type: {type(response)}")
+                logger.info(f"Response attributes: {dir(response)}")
+                analysis = response.content
             except Exception as api_error:
                 logger.error(f"Claude API error during initial analysis: {str(api_error)}")
+                logger.error(f"API error type: {type(api_error)}")
+                logger.error(f"API error details: {api_error.__dict__}")
                 raise ValueError(f"Failed to get analysis from Claude API: {str(api_error)}")
 
         if not analysis or not analysis.strip():
@@ -1087,7 +1109,7 @@ def analyze_legal_pack():
             total_tokens = sum(count_tokens(doc['content']) for doc in documents_content)
             app.logger.info(f"Total tokens across all documents: {total_tokens}")
             app.logger.info(f"Total tokens before analysis: {total_tokens}")
-
+            
             try:
                 # Get analysis from Claude
                 analysis = analyze_with_claude(documents_content)
