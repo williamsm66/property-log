@@ -7,7 +7,7 @@ SQLAlchemy==2.0.20
 Werkzeug>=3.0.0
 python-dotenv==1.0.0
 quart==0.19.4
-python-docx==1.1.2
+python-docx==1.0.1
 PyPDF2==3.0.1
 Flask-Cors==5.0.0
 gunicorn==21.2.0

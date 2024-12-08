@@ -15,7 +15,7 @@ from werkzeug.utils import secure_filename
 import tiktoken
 import io
 import subprocess
-from docx import Document
+import docx
 import PyPDF2
 from dotenv import load_dotenv
 from werkzeug.serving import WSGIRequestHandler
@@ -334,185 +334,42 @@ def extract_text_from_pdf(pdf_path):
         logging.error(f"Error extracting text from PDF: {str(e)}")
         return ""
 
-def convert_doc_to_pdf(doc_path):
-    """Convert .doc file to PDF using Google Cloud Document AI."""
+def extract_text_from_doc(doc_path):
+    """Extract text directly from a .doc file using python-docx."""
     try:
-        client = documentai.DocumentProcessorServiceClient()
-        
-        # Use the OCR processor
-        location = "us"  # Format is 'us' or 'eu'
-        processor_id = os.getenv('GOOGLE_CLOUD_PROCESSOR_ID')
-        project_id = os.getenv('GOOGLE_CLOUD_PROJECT')
-        
-        name = f"projects/{project_id}/locations/{location}/processors/{processor_id}"
-
-        # Read the document file
-        with open(doc_path, "rb") as doc_file:
-            content = doc_file.read()
-
-        # Create the document object - treat it as a PDF
-        raw_document = documentai.RawDocument(
-            content=content,
-            mime_type="application/pdf"
-        )
-
-        # Configure the process request
-        request = documentai.ProcessRequest(
-            name=name,
-            raw_document=raw_document
-        )
-
-        # Process the document
-        try:
-            result = client.process_document(request=request)
-            
-            if result.document:
-                # Extract text from the processed document
-                text = result.document.text
-                
-                # Create a PDF with the extracted text
-                output_pdf = doc_path.rsplit('.', 1)[0] + '.pdf'
-                
-                # Use reportlab to create a PDF with the extracted text
-                from reportlab.pdfgen import canvas
-                from reportlab.lib.pagesizes import letter
-                
-                c = canvas.Canvas(output_pdf, pagesize=letter)
-                y = 750  # Start near the top of the page
-                
-                # Split text into lines and write to PDF
-                for line in text.split('\n'):
-                    if y < 50:  # If we're near the bottom of the page
-                        c.showPage()  # Start a new page
-                        y = 750  # Reset to top of new page
-                    c.drawString(50, y, line)
-                    y -= 12  # Move down for next line
-                
-                c.save()
-                logging.info(f"Successfully converted {doc_path} to PDF")
-                return output_pdf
-            else:
-                logging.error(f"No document in result for {doc_path}")
-                return None
-                
-        except Exception as process_error:
-            logging.error(f"Error processing document: {str(process_error)}")
-            return None
-
+        doc = docx.Document(doc_path)
+        full_text = []
+        for para in doc.paragraphs:
+            full_text.append(para.text)
+        return '\n'.join(full_text)
     except Exception as e:
-        logging.error(f"Error converting .doc file {doc_path}: {str(e)}")
+        logging.error(f"Error extracting text from .doc file {doc_path}: {str(e)}")
         return None
-
-def process_zip_file(zip_file_path):
-    """Process a ZIP file and extract its contents."""
-    processed_files = []
-    failed_files = []
-    processing_summary = []
-    total_tokens = 0
-    
-    with tempfile.TemporaryDirectory() as temp_dir:
-        with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
-            zip_ref.extractall(temp_dir)
-            
-            # Process each file in the zip
-            for root, _, files in os.walk(temp_dir):
-                for file in files:
-                    if file.startswith('~'):  # Skip temporary files
-                        continue
-                        
-                    file_path = os.path.join(root, file)
-                    try:
-                        content = process_document(file_path)
-                        if content and content.strip():
-                            num_tokens = count_tokens(content)
-                            total_tokens += num_tokens
-                            processed_files.append({
-                                'name': file,
-                                'content': content,
-                                'length': len(content),
-                                'tokens': num_tokens
-                            })
-                            processing_summary.append(f"Successfully processed {file} ({num_tokens} tokens)")
-                        else:
-                            failed_files.append(file)
-                            processing_summary.append(f"Failed to extract content from {file}")
-                    except Exception as e:
-                        failed_files.append(file)
-                        processing_summary.append(f"Error processing {file}: {str(e)}")
-                        logger.error(f"Error processing {file}: {str(e)}")
-
-    # Save processing results
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    results = {
-        "documents": processed_files,  # Save the full array of processed files
-        "failed_files": failed_files,
-        "processed_at": datetime.now().isoformat(),
-        "total_documents": len(processed_files) + len(failed_files),
-        "total_tokens": total_tokens,
-        "processing_summary": processing_summary
-    }
-    
-    results_filename = f"processing_results_{timestamp}.json"
-    results_filepath = STORAGE_DIR / results_filename
-    
-    with open(results_filepath, 'w', encoding='utf-8') as f:
-        json.dump(results, f, indent=2, ensure_ascii=False)
-    
-    logger.info(f"Processing results saved to {results_filepath}")
-    logger.info(f"Total tokens across all documents: {total_tokens}")
-    
-    return processed_files, failed_files, "\n".join(processing_summary)
 
 def process_document(file_path):
     """Process a single document and return its text content."""
     try:
-        _, ext = os.path.splitext(file_path.lower())
+        file_extension = os.path.splitext(file_path)[1].lower()
         
-        if ext == '.pdf':
+        if file_extension == '.doc' or file_extension == '.docx':
+            # Try to extract text directly from Word document
+            text = extract_text_from_doc(file_path)
+            if text:
+                return text
+            else:
+                logging.error(f"Failed to extract text from Word document: {file_path}")
+                return ""
+                
+        elif file_extension == '.pdf':
             return extract_text_from_pdf(file_path)
-        elif ext == '.docx':
-            try:
-                doc = Document(file_path)
-                return '\n'.join([paragraph.text for paragraph in doc.paragraphs])
-            except Exception as e:
-                logger.error(f"Error processing DOCX file {file_path}: {str(e)}")
-                return None
-        elif ext == '.doc':
-            logger.warning(f"Old .doc format detected for {file_path}. Converting to PDF first...")
-            try:
-                # Convert .doc to PDF using Google Cloud Document AI
-                pdf_path = convert_doc_to_pdf(file_path)
-                if pdf_path:
-                    text = extract_text_from_pdf(pdf_path)
-                    os.remove(pdf_path)  # Clean up temporary PDF
-                    return text
-                else:
-                    logger.error(f"Failed to convert .doc to PDF: {pdf_path}")
-                    return None
-            except Exception as e:
-                logger.error(f"Error converting .doc file {file_path}: {str(e)}")
-                return None
-        elif ext == '.txt':
-            try:
-                with open(file_path, 'r', encoding='utf-8') as file:
-                    return file.read()
-            except UnicodeDecodeError:
-                # Try different encodings if utf-8 fails
-                encodings = ['latin-1', 'cp1252', 'iso-8859-1']
-                for encoding in encodings:
-                    try:
-                        with open(file_path, 'r', encoding=encoding) as file:
-                            return file.read()
-                    except UnicodeDecodeError:
-                        continue
-                logger.error(f"Could not decode file {file_path} with any known encoding")
-                return None
+            
         else:
-            logger.warning(f"Unsupported file type: {ext} for file {file_path}")
-            return None
+            logging.error(f"Unsupported file type: {file_extension}")
+            return ""
+            
     except Exception as e:
-        logger.error(f"Error processing file {file_path}: {str(e)}")
-        return None
+        logging.error(f"Error in process_document: {str(e)}")
+        return ""
 
 def save_documents(session_id, processed_files, initial_analysis=None, qa_history=None):
     """Save documents and analysis history to disk."""
@@ -556,7 +413,9 @@ def load_documents(session_id):
 
 def analyze_with_claude(documents_content, processing_summary=None, follow_up_question=None, initial_analysis=None, qa_history=None):
     try:
-        client = anthropic.Client(api_key=os.getenv('CLAUDE_API_KEY'))
+        client = anthropic.Anthropic(
+            api_key=os.getenv('CLAUDE_API_KEY')
+        )
         
         # Prepare the system prompt
         system_prompt = """You are a legal expert analyzing property documents. Focus on:
@@ -577,16 +436,18 @@ Provide a clear, concise summary highlighting any red flags."""
             if qa_history:
                 user_message += f"\n\nPrevious Q&A:\n{qa_history}"
 
-        # Create the message using the appropriate API
-        message = client.completion(
+        # Create the message using the latest API version
+        response = client.messages.create(
             model="claude-3-opus-20240229",
             max_tokens=4000,
-            prompt=f"\n\nHuman: {user_message}\n\nAssistant: ",
-            system=system_prompt,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message}
+            ]
         )
 
         app.logger.info(f"Successfully got analysis from Claude API")
-        return message.completion
+        return response.content[0].text
 
     except Exception as e:
         error_msg = f"Failed to get analysis from Claude API: {str(e)}"
@@ -909,77 +770,79 @@ def analyze_legal_pack():
     """Handle legal pack file upload and analysis."""
     try:
         if 'file' not in request.files:
-            return jsonify({'error': 'No file uploaded', 'suggestion': 'Please select a file to upload'}), 400
-        
-        file = request.files['file']
-        property_id = request.form.get('property_id')
-        
-        if not file or file.filename == '':
-            return jsonify({'error': 'No file selected', 'suggestion': 'Please select a file to upload'}), 400
+            return jsonify({'error': 'No file uploaded'}), 400
+
+        uploaded_file = request.files['file']
+        if not uploaded_file.filename:
+            return jsonify({'error': 'No file selected'}), 400
+
+        # Create a temporary directory for processing
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Save the uploaded file
+            temp_zip = os.path.join(temp_dir, secure_filename(uploaded_file.filename))
+            uploaded_file.save(temp_zip)
+
+            # Process the documents
+            documents_content = []
             
-        if not property_id:
-            return jsonify({'error': 'No property ID provided', 'suggestion': 'Please try again or contact support'}), 400
-        
-        # Save the uploaded file
-        filename = secure_filename(file.filename)
-        temp_dir = tempfile.mkdtemp()
-        zip_path = os.path.join(temp_dir, filename)
-        file.save(zip_path)
-        
-        try:
-            # First process all documents and collect results
-            processed_files, failed_files, processing_summary = process_zip_file(zip_path)
+            if uploaded_file.filename.endswith('.zip'):
+                # Extract and process ZIP contents
+                with zipfile.ZipFile(temp_zip, 'r') as zip_ref:
+                    zip_ref.extractall(temp_dir)
+                    
+                    # Process each file in the ZIP
+                    for root, dirs, files in os.walk(temp_dir):
+                        for file in files:
+                            if file.lower().endswith(('.pdf', '.doc', '.docx')):
+                                file_path = os.path.join(root, file)
+                                text_content = process_document(file_path)
+                                if text_content:
+                                    documents_content.append({
+                                        'name': file,
+                                        'content': text_content
+                                    })
+            else:
+                # Process single file
+                text_content = process_document(temp_zip)
+                if text_content:
+                    documents_content.append({
+                        'name': uploaded_file.filename,
+                        'content': text_content
+                    })
+
+            if not documents_content:
+                return jsonify({'error': 'No valid documents found or no text could be extracted'}), 400
+
+            # Save processing results
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            results_file = os.path.join('document_storage', f'processing_results_{timestamp}.json')
+            os.makedirs('document_storage', exist_ok=True)
             
-            if not processed_files:
+            with open(results_file, 'w') as f:
+                json.dump(documents_content, f)
+            
+            app.logger.info(f"Processing results saved to {results_file}")
+
+            # Count total tokens
+            total_tokens = sum(count_tokens(doc['content']) for doc in documents_content)
+            app.logger.info(f"Total tokens across all documents: {total_tokens}")
+            app.logger.info(f"Total tokens before analysis: {total_tokens}")
+
+            try:
+                # Get analysis from Claude
+                analysis = analyze_with_claude(documents_content)
                 return jsonify({
-                    'error': 'No documents could be processed',
-                    'suggestion': 'Please check that the ZIP file contains valid documents'
-                }), 400
-            
-            # Generate a session ID for this analysis
-            session_id = str(uuid.uuid4())
-            
-            # Save the processed documents
-            save_documents(session_id, processed_files)
-            
-            # Calculate total tokens
-            total_tokens = sum(doc['tokens'] for doc in processed_files)
-            logger.info(f"Total tokens before analysis: {total_tokens}")
-            
-            # Only proceed with analysis if we have all documents processed
-            analysis_result = analyze_with_claude(processed_files, processing_summary)
-            
-            # Save documents and initial analysis
-            save_documents(session_id, processed_files, analysis_result)
-            
-            # Update property with analysis and session ID
-            property = Property.query.get(property_id)
-            if property:
-                property.legal_pack_analysis = analysis_result
-                property.legal_pack_session_id = session_id
-                property.legal_pack_analyzed_at = datetime.utcnow()
-                db.session.commit()
-            
-            return jsonify({
-                'analysis': analysis_result,
-                'session_id': session_id,
-                'processing_summary': processing_summary,
-                'total_tokens': total_tokens,
-                'total_documents': len(processed_files),
-                'failed_documents': len(failed_files)
-            })
-            
-        finally:
-            # Clean up temporary files
-            shutil.rmtree(temp_dir, ignore_errors=True)
-            
+                    'success': True,
+                    'analysis': analysis,
+                    'documents': documents_content
+                })
+            except Exception as e:
+                app.logger.error(f"Error in analyze_legal_pack: {str(e)}")
+                return jsonify({'error': str(e)}), 500
+
     except Exception as e:
-        logger.error(f"Error in analyze_legal_pack: {str(e)}")
-        return jsonify({
-            'error': 'Failed to analyze documents',
-            'suggestion': 'Please try again or contact support if the problem persists',
-            'details': str(e)
-        }), 500
+        app.logger.error(f"Error in analyze_legal_pack: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/property/ask_followup', methods=['POST'])
 def ask_followup():
