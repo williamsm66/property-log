@@ -13,9 +13,11 @@ import anthropic
 import zipfile
 from werkzeug.utils import secure_filename
 import tiktoken
+import pytesseract
+from pdf2image import convert_from_path
 import io
 import subprocess
-import docx
+from docx import Document
 import PyPDF2
 from dotenv import load_dotenv
 from werkzeug.serving import WSGIRequestHandler
@@ -23,8 +25,7 @@ import time
 from pathlib import Path
 from google.cloud import vision
 from google.cloud import documentai_v1 as documentai
-from pdf2image import convert_from_path
-import pytesseract
+from datetime import timedelta  # Import timedelta for viewing schedule
 
 # Configure logging
 logging.basicConfig(
@@ -339,27 +340,16 @@ def extract_text_from_doc(doc_path):
     try:
         # Try python-docx first
         try:
-            import docx
-            doc = docx.Document(doc_path)
-            full_text = []
-            for para in doc.paragraphs:
-                if para.text.strip():
-                    full_text.append(para.text)
-            text = '\n'.join(full_text)
-            if text.strip():
-                return text
-        except Exception as docx_error:
-            logging.error(f"python-docx extraction failed: {str(docx_error)}")
-        
-        # If python-docx fails, try reading as PDF
-        try:
-            return extract_text_from_pdf(doc_path)
-        except Exception as pdf_error:
-            logging.error(f"PDF extraction failed: {str(pdf_error)}")
-            
-        return None
+            doc = Document(doc_path)
+            return '\n'.join([paragraph.text for paragraph in doc.paragraphs])
+        except ImportError:
+            logger.error("python-docx not properly installed")
+            return None
+        except Exception as e:
+            logger.error(f"Error processing DOCX file {doc_path}: {str(e)}")
+            return None
     except Exception as e:
-        logging.error(f"Error in extract_text_from_doc: {str(e)}")
+        logger.error(f"Error in extract_text_from_doc: {str(e)}")
         return None
 
 def process_document(file_path):
@@ -369,43 +359,16 @@ def process_document(file_path):
         
         if ext == '.pdf':
             return extract_text_from_pdf(file_path)
-        elif ext in ['.docx', '.doc']:
+        elif ext == '.docx':
             try:
-                # First try python-docx
                 doc = Document(file_path)
-                text = '\n'.join([paragraph.text for paragraph in doc.paragraphs if paragraph.text.strip()])
-                if text.strip():
-                    return text
-                    
-                # If no text was extracted but no error occurred, try PDF extraction
-                logger.warning(f"No text extracted from {file_path} using python-docx, trying PDF extraction")
-                return extract_text_from_pdf(file_path)
-            except Exception as docx_error:
-                logger.error(f"python-docx extraction failed: {str(docx_error)}")
-                try:
-                    # If python-docx fails, try converting to PDF first
-                    pdf_path = f"{file_path}.pdf"
-                    try:
-                        # Try using LibreOffice for conversion
-                        result = subprocess.run(
-                            ['soffice', '--headless', '--convert-to', 'pdf', '--outdir', os.path.dirname(file_path), file_path],
-                            capture_output=True,
-                            text=True,
-                            timeout=30  # Add timeout to prevent hanging
-                        )
-                        if os.path.exists(pdf_path):
-                            text = extract_text_from_pdf(pdf_path)
-                            os.remove(pdf_path)  # Clean up
-                            if text:
-                                return text
-                    except Exception as convert_error:
-                        logger.error(f"LibreOffice conversion failed: {str(convert_error)}")
-                    
-                    # If LibreOffice fails, try direct PDF extraction
-                    return extract_text_from_pdf(file_path)
-                except Exception as pdf_error:
-                    logger.error(f"PDF extraction failed: {str(pdf_error)}")
-                    return None
+                return '\n'.join([paragraph.text for paragraph in doc.paragraphs])
+            except ImportError:
+                logger.error("python-docx not properly installed")
+                return None
+            except Exception as e:
+                logger.error(f"Error processing DOCX file {file_path}: {str(e)}")
+                return None
         else:
             logger.warning(f"Unsupported file type: {ext} for file {file_path}")
             return None

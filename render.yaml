@@ -16,7 +16,11 @@ services:
         libleptonica-dev \
         libicu-dev \
         libpango1.0-dev \
-        libcairo2-dev
+        libcairo2-dev \
+        libreoffice \
+        poppler-utils \
+        tesseract-ocr \
+        tesseract-ocr-eng
       pip install -r requirements.txt
       chmod +x setup_binaries.sh
       ./setup_binaries.sh
