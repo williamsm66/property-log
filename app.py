@@ -29,6 +29,9 @@ from datetime import timedelta  # Import timedelta for viewing schedule
 import gc  # Import garbage collector
 from threading import Thread
 
+# Initialize Flask app first
+app = Flask(__name__)
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -45,69 +48,26 @@ logger.setLevel(logging.INFO)
 logging.getLogger('werkzeug').setLevel(logging.INFO)
 
 # Load environment variables
-app.logger.info("Starting application initialization...")
+logger.info("Starting application initialization...")
 load_dotenv()
-app.logger.info("Environment variables loaded")
+logger.info("Environment variables loaded")
 
 # Initialize Google Cloud clients
 try:
     vision_client = vision.ImageAnnotatorClient()
-    app.logger.info("Google Vision client initialized successfully")
+    logger.info("Google Vision client initialized successfully")
 except Exception as e:
-    app.logger.error(f"Failed to initialize Google Vision client: {str(e)}")
+    logger.error(f"Failed to initialize Google Vision client: {str(e)}")
 
 # Check required environment variables
 required_vars = ['CLAUDE_API_KEY', 'DATABASE_URL', 'GOOGLE_APPLICATION_CREDENTIALS', 'GOOGLE_CLOUD_PROJECT']
 missing_vars = [var for var in required_vars if not os.getenv(var)]
 if missing_vars:
-    app.logger.warning(f"Missing required environment variables: {', '.join(missing_vars)}")
+    logger.warning(f"Missing required environment variables: {', '.join(missing_vars)}")
 else:
-    app.logger.info("All required environment variables are set")
+    logger.info("All required environment variables are set")
 
-app.logger.info("Application initialization completed")
-
-# Initialize Flask app
-app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
-
-def check_system_dependencies():
-    """Check if required Google Cloud credentials and environment variables are set."""
-    # Check Google Cloud credentials
-    creds_path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
-    if creds_path:
-        logging.info(f"Google Cloud credentials path is set: {creds_path}")
-        if os.path.exists(creds_path):
-            logging.info("Google Cloud credentials file exists")
-        else:
-            logging.error(f"Google Cloud credentials file not found at: {creds_path}")
-    else:
-        logging.error("GOOGLE_APPLICATION_CREDENTIALS environment variable not set")
-
-    # Check other required environment variables
-    project_id = os.environ.get('GOOGLE_CLOUD_PROJECT')
-    if project_id:
-        logging.info(f"Google Cloud Project ID is set: {project_id}")
-    else:
-        logging.error("GOOGLE_CLOUD_PROJECT environment variable not set")
-
-    processor_id = os.environ.get('GOOGLE_CLOUD_PROCESSOR_ID')
-    if processor_id:
-        logging.info(f"Document AI Processor ID is set: {processor_id}")
-    else:
-        logging.error("GOOGLE_CLOUD_PROCESSOR_ID environment variable not set")
-
-    # Log system PATH for debugging
-    logging.info(f"System PATH: {os.environ.get('PATH', 'Not set')}")
-
-check_system_dependencies()
-
-# Add JSON filter for Jinja2
-@app.template_filter('json_loads')
-def json_loads_filter(s):
-    try:
-        return json.loads(s) if s else []
-    except:
-        return []
+logger.info("Application initialization completed")
 
 # Configure database and uploads
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -330,6 +290,14 @@ def init_db():
 init_db()
 app.logger.info("Database initialization completed")
 
+# Add JSON filter for Jinja2
+@app.template_filter('json_loads')
+def json_loads_filter(s):
+    try:
+        return json.loads(s) if s else []
+    except:
+        return []
+
 def save_documents(session_id, processed_files, initial_analysis=None, qa_history=None):
     """Save documents and analysis history to database."""
     try:
@@ -383,40 +351,36 @@ def extract_text_from_pdf(file_path):
             BATCH_SIZE = 10
             MAX_PAGES = 50  # Maximum total pages to process
             
-            for batch_start in range(0, min(total_pages, MAX_PAGES), BATCH_SIZE):
-                batch_end = min(batch_start + BATCH_SIZE, total_pages, MAX_PAGES)
-                app.logger.info(f"Processing batch of pages {batch_start + 1} to {batch_end}")
-                
-                batch_text = []
-                for page_num in range(batch_start, batch_end):
-                    app.logger.info(f"Processing page {page_num + 1}/{total_pages}")
-                    try:
+            for batch_start in range(0, total_pages, BATCH_SIZE):
+                try:
+                    end_page = min(batch_start + BATCH_SIZE, total_pages)
+                    batch_text = []
+                    
+                    for page_num in range(batch_start, end_page):
                         page = pdf_reader.pages[page_num]
                         page_text = page.extract_text().strip()
                         
-                        if not page_text or len(page_text) < 100:  # Likely a scanned page
-                            app.logger.info(f"Page {page_num + 1} appears to be scanned, attempting OCR")
+                        if not page_text or len(page_text) < 100:
                             images = convert_from_path(file_path, first_page=page_num+1, last_page=page_num+1)
                             if images:
                                 page_text = process_scanned_page(images[0])
-                                del images  # Free memory immediately
-                            gc.collect()  # Force garbage collection after OCR
+                                del images
                         
                         batch_text.append(page_text)
-                        gc.collect()  # Regular garbage collection
-                        
-                    except Exception as e:
-                        app.logger.error(f"Error processing page {page_num + 1}: {str(e)}")
-                        continue
-                
-                text_content.extend(batch_text)
-                gc.collect()  # Batch-level garbage collection
-                
-            if total_pages > MAX_PAGES:
-                app.logger.warning(f"PDF has {total_pages} pages, but only processed first {MAX_PAGES} pages")
-                text_content.append(f"\n[Note: Only the first {MAX_PAGES} pages were processed due to size limits]")
-            
-            return "\n".join(text_content)
+                        gc.collect()
+                    
+                    text_content.extend(batch_text)
+                    gc.collect()
+                    
+                except Exception as e:
+                    app.logger.error(f"Error processing pages {batch_start}-{end_page}: {str(e)}")
+                    continue
+        
+        if total_pages > MAX_PAGES:
+            app.logger.warning(f"PDF has {total_pages} pages, but only processed first {MAX_PAGES} pages")
+            text_content.append(f"\n[Note: Only the first {MAX_PAGES} pages were processed due to size limits]")
+        
+        return "\n".join(text_content)
             
     except Exception as e:
         app.logger.error(f"Error in PDF extraction: {str(e)}")
