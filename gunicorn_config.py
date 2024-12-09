@@ -1,18 +1,19 @@
 import multiprocessing
+import os
 
 # Server socket
 bind = "0.0.0.0:10000"
 backlog = 2048
 
 # Worker processes
-workers = multiprocessing.cpu_count()
+workers = 2  # Rule of thumb: 2-4 x $(NUM_CORES)
 worker_class = 'sync'
 worker_connections = 1000
 timeout = 300  # 5 minutes
 keepalive = 2
 
 # Process naming
-proc_name = 'gunicorn_property_log'
+proc_name = 'property-log'
 
 # Logging
 accesslog = '-'
@@ -31,34 +32,33 @@ tmp_upload_dir = None
 keyfile = None
 certfile = None
 
-# Process management
-preload_app = True
-reload = False
-reload_engine = 'auto'
-
 # Memory management
-max_requests = 1000
-max_requests_jitter = 50
+max_requests = 1000  # Restart workers after this many requests
+max_requests_jitter = 50  # Add randomness to max_requests
+worker_tmp_dir = "/dev/shm"  # Use RAM for temp files
+worker_exit_on_memory = 512  # MB - restart worker if memory exceeds this
+worker_abort_on_memory = 1024  # MB - kill worker if memory exceeds this
 
-# Debugging
-check_config = False
-print_config = False
+# Preload app for better performance
+preload_app = True
 
-# Server hooks
-def post_fork(server, worker):
-    server.log.info("Worker spawned (pid: %s)", worker.pid)
+def post_worker_init(worker):
+    """Called just after a worker has been initialized."""
+    import gc
+    gc.enable()  # Enable garbage collection
+    gc.set_threshold(100, 5, 5)  # More aggressive GC
 
-def pre_fork(server, worker):
-    pass
+def worker_exit(server, worker):
+    """Called just after a worker has been killed."""
+    import gc
+    gc.collect()  # Force final garbage collection
 
-def pre_exec(server):
-    server.log.info("Forked child, re-executing.")
+def pre_request(worker, req):
+    """Called just before a worker processes the request."""
+    import gc
+    gc.collect()  # Collect garbage before each request
 
-def when_ready(server):
-    server.log.info("Server is ready. Spawning workers")
-
-def worker_int(worker):
-    worker.log.info("worker received INT or QUIT signal")
-
-def worker_abort(worker):
-    worker.log.info("worker received SIGABRT signal")
+def post_request(worker, req, environ, resp):
+    """Called just after a worker processes the request."""
+    import gc
+    gc.collect()  # Collect garbage after each request

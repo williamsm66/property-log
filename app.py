@@ -27,6 +27,7 @@ from google.cloud import vision
 from google.cloud import documentai_v1 as documentai
 from datetime import timedelta  # Import timedelta for viewing schedule
 import gc  # Import garbage collector
+from threading import Thread
 
 # Configure logging
 logging.basicConfig(
@@ -137,6 +138,17 @@ class DocumentSession(db.Model):
     qa_history = db.Column(db.JSON)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     property_id = db.Column(db.Integer, db.ForeignKey('property.id'))
+
+class Document(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    filename = db.Column(db.String(255), nullable=False)
+    status = db.Column(db.String(50), default='pending')  # pending, processing, completed, failed
+    error = db.Column(db.Text)
+    text_content = db.Column(db.Text)
+    processed_pages = db.Column(db.Integer, default=0)
+    total_pages = db.Column(db.Integer)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 def count_tokens(text):
     """Count tokens in text using tiktoken."""
@@ -321,112 +333,88 @@ def load_documents(session_id):
         logger.error(f"Error loading documents from database: {str(e)}")
         return None, None, None
 
-def process_scanned_page(image_data):
-    """Process a scanned page using Google Cloud Vision API."""
+def extract_text_from_pdf(file_path):
+    """Extract text from PDF file."""
+    app.logger.info(f"Starting PDF extraction for: {file_path}")
+    text_content = []
+    
     try:
-        client = vision.ImageAnnotatorClient()
-        
-        # If image_data is bytes, use it directly, otherwise read the file
-        if isinstance(image_data, bytes):
-            image = vision.Image(content=image_data)
-        else:
-            with open(image_data, 'rb') as image_file:
-                content = image_file.read()
-                image = vision.Image(content=content)
-        
-        # Optimize memory by requesting only text detection
-        response = client.text_detection(
-            image=image,
-            image_context={"language_hints": ["en"]}
-        )
-        
-        if response.error.message:
-            app.logger.error(f"Error from Vision API: {response.error.message}")
-            return ""
+        with open(file_path, 'rb') as file:
+            pdf_reader = PyPDF2.PdfReader(file)
+            total_pages = len(pdf_reader.pages)
+            app.logger.info(f"PDF has {total_pages} pages")
             
-        if response.full_text_annotation:
-            text = response.full_text_annotation.text
-        elif response.text_annotations:
-            text = response.text_annotations[0].description
-        else:
-            text = ""
+            # Process in batches of 10 pages
+            BATCH_SIZE = 10
+            MAX_PAGES = 50  # Maximum total pages to process
             
-        # Clear the response object to free memory
-        del response
-        return text
-        
-    except Exception as e:
-        app.logger.error(f"Error in process_scanned_page: {str(e)}")
-        return ""
-
-def extract_text_from_pdf(pdf_path):
-    """Extract text from PDF, using Google Cloud Vision for scanned pages."""
-    try:
-        text_content = []
-        page_count = 0
-        max_pages = 50  # Limit number of pages to process
-        
-        app.logger.info(f"Starting PDF extraction for: {pdf_path}")
-        reader = PyPDF2.PdfReader(pdf_path)
-        total_pages = len(reader.pages)
-        app.logger.info(f"PDF has {total_pages} pages. Will process up to {max_pages} pages.")
-        
-        if total_pages > max_pages:
-            app.logger.warning(f"PDF has {total_pages} pages, but only processing first {max_pages} pages")
-            text_content.append(f"\n[Note: This document has {total_pages} pages, but only the first {max_pages} pages were processed to ensure stable performance.]\n")
-        
-        for page_num in range(min(total_pages, max_pages)):
-            try:
-                app.logger.info(f"Processing page {page_num + 1}/{total_pages}")
-                page = reader.pages[page_num]
+            for batch_start in range(0, min(total_pages, MAX_PAGES), BATCH_SIZE):
+                batch_end = min(batch_start + BATCH_SIZE, total_pages, MAX_PAGES)
+                app.logger.info(f"Processing batch of pages {batch_start + 1} to {batch_end}")
                 
-                # Try extracting text directly first
-                extracted_text = page.extract_text()
-                
-                # If minimal text extracted, page might be scanned
-                if len(extracted_text.strip()) < 50:
-                    app.logger.info(f"Page {page_num + 1} appears to be scanned, attempting OCR")
-                    
-                    # Convert PDF page to image
-                    images = convert_from_path(pdf_path, first_page=page_num+1, last_page=page_num+1)
-                    if images:
-                        # Process first image (should only be one since we're doing one page)
-                        image = images[0]
-                        # Save image to bytes
-                        img_byte_arr = io.BytesIO()
-                        image.save(img_byte_arr, format='PNG')
-                        img_byte_arr = img_byte_arr.getvalue()
+                batch_text = []
+                for page_num in range(batch_start, batch_end):
+                    app.logger.info(f"Processing page {page_num + 1}/{total_pages}")
+                    try:
+                        page = pdf_reader.pages[page_num]
+                        page_text = page.extract_text().strip()
                         
-                        # Use Google Cloud Vision for OCR
-                        extracted_text = process_scanned_page(img_byte_arr)
+                        if not page_text or len(page_text) < 100:  # Likely a scanned page
+                            app.logger.info(f"Page {page_num + 1} appears to be scanned, attempting OCR")
+                            images = convert_from_path(file_path, first_page=page_num+1, last_page=page_num+1)
+                            if images:
+                                page_text = process_scanned_page(images[0])
+                                del images  # Free memory immediately
+                            gc.collect()  # Force garbage collection after OCR
                         
-                        # Clear memory
-                        del images
-                        del image
-                        del img_byte_arr
-                    
-                text_content.append(extracted_text)
-                page_count += 1
+                        batch_text.append(page_text)
+                        gc.collect()  # Regular garbage collection
+                        
+                    except Exception as e:
+                        app.logger.error(f"Error processing page {page_num + 1}: {str(e)}")
+                        continue
                 
-                # Clear memory after each page
-                del page
-                if page_count % 10 == 0:  # Every 10 pages
-                    gc.collect()  # Force garbage collection
+                text_content.extend(batch_text)
+                gc.collect()  # Batch-level garbage collection
                 
-            except Exception as e:
-                app.logger.error(f"Error processing page {page_num + 1}: {str(e)}")
-                text_content.append(f"\n[Error processing page {page_num + 1}]\n")
-                continue
-        
-        # Clear memory
-        del reader
-        gc.collect()
-        
-        return "\n".join(text_content)
-        
+            if total_pages > MAX_PAGES:
+                app.logger.warning(f"PDF has {total_pages} pages, but only processed first {MAX_PAGES} pages")
+                text_content.append(f"\n[Note: Only the first {MAX_PAGES} pages were processed due to size limits]")
+            
+            return "\n".join(text_content)
+            
     except Exception as e:
-        app.logger.error(f"Error in extract_text_from_pdf: {str(e)}")
+        app.logger.error(f"Error in PDF extraction: {str(e)}")
         raise
+
+def process_scanned_page(image):
+    """Process a scanned page using OCR."""
+    try:
+        # Convert PIL image to bytes
+        with io.BytesIO() as bio:
+            image.save(bio, format='PNG')
+            image_bytes = bio.getvalue()
+        
+        # Create Vision API image
+        vision_image = vision.Image(content=image_bytes)
+        
+        # Perform OCR
+        response = vision_client.text_detection(image=vision_image)
+        if response.error.message:
+            raise Exception(response.error.message)
+            
+        texts = response.text_annotations
+        if texts:
+            return texts[0].description
+        return ""
+        
+    except Exception as e:
+        app.logger.error(f"OCR Error: {str(e)}")
+        return ""
+    finally:
+        # Clean up
+        del image_bytes
+        gc.collect()
 
 def extract_text_from_doc(doc_path):
     """Extract text from Word documents using multiple methods for maximum compatibility."""
@@ -825,6 +813,68 @@ List any important information that appears to be missing from the legal pack
         if token_summary:
             logger.error(f"Token summary at error: {token_summary}")
         raise ValueError(error_msg)
+
+def process_document_async(doc_id):
+    """Process document in background."""
+    try:
+        document = Document.query.get(doc_id)
+        if not document:
+            return
+        
+        document.status = 'processing'
+        db.session.commit()
+        
+        # Get file path from document
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], document.filename)
+        
+        # Process in chunks of 10 pages
+        CHUNK_SIZE = 10
+        text_chunks = []
+        
+        with open(file_path, 'rb') as file:
+            pdf_reader = PyPDF2.PdfReader(file)
+            total_pages = len(pdf_reader.pages)
+            document.total_pages = total_pages
+            db.session.commit()
+            
+            for start_page in range(0, total_pages, CHUNK_SIZE):
+                try:
+                    end_page = min(start_page + CHUNK_SIZE, total_pages)
+                    chunk_text = []
+                    
+                    for page_num in range(start_page, end_page):
+                        page = pdf_reader.pages[page_num]
+                        page_text = page.extract_text().strip()
+                        
+                        if not page_text or len(page_text) < 100:
+                            images = convert_from_path(file_path, first_page=page_num+1, last_page=page_num+1)
+                            if images:
+                                page_text = process_scanned_page(images[0])
+                                del images
+                        
+                        chunk_text.append(page_text)
+                        document.processed_pages = page_num + 1
+                        db.session.commit()
+                        gc.collect()
+                    
+                    text_chunks.extend(chunk_text)
+                    gc.collect()
+                    
+                except Exception as e:
+                    app.logger.error(f"Error processing pages {start_page}-{end_page}: {str(e)}")
+                    continue
+        
+        document.text_content = "\n".join(text_chunks)
+        document.status = 'completed'
+        db.session.commit()
+        
+    except Exception as e:
+        app.logger.error(f"Error processing document {doc_id}: {str(e)}")
+        document.status = 'failed'
+        document.error = str(e)
+        db.session.commit()
+    finally:
+        gc.collect()
 
 @app.route('/')
 def home():
@@ -1422,6 +1472,56 @@ def test_property_details():
         'rental_income': 1500
     }
     return render_template('property_details.html', property=test_property)
+
+@app.route('/document_status/<int:doc_id>')
+def document_status(doc_id):
+    """Get document processing status."""
+    try:
+        document = Document.query.get_or_404(doc_id)
+        return jsonify({
+            'status': document.status,
+            'processed_pages': document.processed_pages,
+            'total_pages': document.total_pages,
+            'error': document.error,
+            'text_content': document.text_content if document.status == 'completed' else None
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/analyze_legal_pack', methods=['POST'])
+def analyze_legal_pack():
+    """Handle legal pack file upload and analysis."""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file uploaded'}), 400
+            
+        file = request.files['file']
+        if not file or not file.filename:
+            return jsonify({'error': 'No file selected'}), 400
+            
+        # Save file
+        filename = secure_filename(file.filename)
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(file_path)
+        
+        # Create document record
+        document = Document(filename=filename)
+        db.session.add(document)
+        db.session.commit()
+        
+        # Start background processing
+        thread = Thread(target=process_document_async, args=(document.id,))
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'message': 'File uploaded and processing started',
+            'document_id': document.id
+        }), 202
+        
+    except Exception as e:
+        app.logger.error(f"Error in analyze_legal_pack: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     with app.app_context():

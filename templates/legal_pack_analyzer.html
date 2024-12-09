@@ -429,6 +429,106 @@
                 .replace(/\n/g, '<br>');
         }
 
+        async function uploadFile() {
+            const fileInput = document.getElementById('file');
+            const resultDiv = document.getElementById('results');
+            const progressDiv = document.getElementById('loading');
+            
+            if (!fileInput.files.length) {
+                alert('Please select a file first');
+                return;
+            }
+            
+            const file = fileInput.files[0];
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                // Show progress
+                progressDiv.innerHTML = `
+                    <div class="alert alert-info">
+                        <div class="spinner-border spinner-border-sm" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        Uploading file...
+                    </div>
+                `;
+                
+                // Upload file
+                const response = await fetch('/analyze-legal-pack', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Upload failed: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                const docId = data.document_id;
+                
+                // Poll for status
+                const pollStatus = async () => {
+                    const statusResponse = await fetch(`/document_status/${docId}`);
+                    if (!statusResponse.ok) {
+                        throw new Error(`Status check failed: ${statusResponse.statusText}`);
+                    }
+                    
+                    const statusData = await statusResponse.json();
+                    
+                    // Update progress
+                    if (statusData.status === 'processing') {
+                        const progress = statusData.total_pages 
+                            ? Math.round((statusData.processed_pages / statusData.total_pages) * 100)
+                            : 0;
+                            
+                        progressDiv.innerHTML = `
+                            <div class="alert alert-info">
+                                <div class="progress">
+                                    <div class="progress-bar" role="progressbar" style="width: ${progress}%">
+                                        ${progress}%
+                                    </div>
+                                </div>
+                                <div class="mt-2">
+                                    Processed ${statusData.processed_pages} of ${statusData.total_pages} pages
+                                </div>
+                            </div>
+                        `;
+                        
+                        // Continue polling
+                        setTimeout(pollStatus, 2000);
+                        
+                    } else if (statusData.status === 'completed') {
+                        progressDiv.innerHTML = `
+                            <div class="alert alert-success">
+                                Processing complete! ${statusData.total_pages} pages processed.
+                            </div>
+                        `;
+                        
+                        // Show results
+                        resultDiv.innerHTML = `<pre>${statusData.text_content}</pre>`;
+                        
+                    } else if (statusData.status === 'failed') {
+                        progressDiv.innerHTML = `
+                            <div class="alert alert-danger">
+                                Processing failed: ${statusData.error}
+                            </div>
+                        `;
+                    }
+                };
+                
+                // Start polling
+                pollStatus();
+                
+            } catch (error) {
+                progressDiv.innerHTML = `
+                    <div class="alert alert-danger">
+                        ${error.message}
+                    </div>
+                `;
+            }
+        }
+
         document.getElementById('uploadForm').addEventListener('submit', analyzeLegalPack);
         document.getElementById('followupForm').addEventListener('submit', askFollowUp);
     </script>
