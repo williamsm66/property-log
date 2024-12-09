@@ -1,64 +1,55 @@
-import multiprocessing
-import os
-
-# Server socket
-bind = f"0.0.0.0:{os.environ.get('PORT', '10000')}"
-backlog = 2048
-
-# Worker processes
-workers = 1  # Reducing to 1 worker to maximize memory per worker
-worker_class = 'sync'
-worker_connections = 1000
-timeout = 600  # Increasing timeout to 10 minutes
-keepalive = 2
-
-# Process naming
-proc_name = 'property-log'
-
 # Logging
 accesslog = '-'
 errorlog = '-'
 loglevel = 'info'
 
-# Server mechanics
-daemon = False
-pidfile = None
-umask = 0
-user = None
-group = None
-tmp_upload_dir = None
+def on_starting(server):
+    """Log when Gunicorn starts."""
+    logger.info("Gunicorn is starting up")
+    logger.info(f"Workers: {workers}")
+    logger.info(f"Worker class: {worker_class}")
+    logger.info(f"Timeout: {timeout}")
 
-# SSL
-keyfile = None
-certfile = None
+def on_reload(server):
+    """Log when Gunicorn reloads."""
+    logger.info("Gunicorn worker reload")
 
-# Memory management
-max_requests = 1000  # Add max requests to recycle workers
-max_requests_jitter = 50  # Add jitter to prevent all workers from restarting at once
-worker_tmp_dir = "/dev/shm"  # Use RAM for temp files
-worker_exit_on_memory = 512  # MB - restart worker if memory exceeds this
-worker_abort_on_memory = 1024  # MB - kill worker if memory exceeds this
+def when_ready(server):
+    """Log when Gunicorn is ready."""
+    logger.info("Gunicorn server is ready. Listening on: %s", bind)
 
-# Preload app for better performance
-preload_app = True
+def worker_int(worker):
+    """Log when worker receives INT or QUIT signal."""
+    logger.info(f"Worker {worker.pid} received INT or QUIT signal")
+
+def worker_abort(worker):
+    """Log when worker receives SIGABRT signal."""
+    logger.error(f"Worker {worker.pid} received SIGABRT signal")
 
 def post_worker_init(worker):
     """Called just after a worker has been initialized."""
-    import gc
-    gc.enable()  # Enable garbage collection
-    gc.set_threshold(100, 5, 5)  # More aggressive GC
+    logger.info(f"Worker {worker.pid} initialized")
+    try:
+        import psutil
+        process = psutil.Process()
+        logger.info(f"Worker memory usage: {process.memory_info().rss / 1024 / 1024:.2f} MB")
+    except ImportError:
+        logger.info("psutil not installed - skipping memory logging")
 
 def worker_exit(server, worker):
     """Called just after a worker has been killed."""
-    import gc
-    gc.collect()  # Force final garbage collection
+    logger.info(f"Worker {worker.pid} exited")
+    try:
+        import psutil
+        process = psutil.Process()
+        logger.info(f"System memory available: {psutil.virtual_memory().available / 1024 / 1024:.2f} MB")
+    except ImportError:
+        pass
 
 def pre_request(worker, req):
     """Called just before a worker processes the request."""
-    import gc
-    gc.collect()  # Collect garbage before each request
+    logger.debug(f"Worker {worker.pid} processing request: {req.uri}")
 
 def post_request(worker, req, environ, resp):
-    """Called just after a worker processes the request."""
-    import gc
-    gc.collect()  # Collect garbage after each request
+    """Called after a worker processes the request."""
+    logger.debug(f"Worker {worker.pid} completed request: {req.uri} - Status: {resp.status}")
