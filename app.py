@@ -1134,7 +1134,8 @@ def analyze_legal_pack():
                 analysis = analyze_with_claude(documents_content)
                 
                 # Save documents with initial analysis and property ID
-                save_success = save_documents(session_id="session_" + datetime.now().strftime('%Y%m%d_%H%M%S'), documents_content, analysis, [])
+                session_id = "session_" + datetime.now().strftime('%Y%m%d_%H%M%S')
+                save_success = save_documents(session_id, documents_content, analysis, [])
                 if not save_success:
                     return jsonify({'error': 'Failed to save documents'}), 500
                 
@@ -1142,13 +1143,13 @@ def analyze_legal_pack():
                 property = Property.query.get(property_id)
                 if property:
                     property.legal_pack_analysis = analysis
-                    property.legal_pack_session_id = "session_" + datetime.now().strftime('%Y%m%d_%H%M%S')
+                    property.legal_pack_session_id = session_id
                     property.legal_pack_analyzed_at = datetime.now()
                     property.legal_pack_qa_history = '[]'  # Initialize empty QA history
                     property.legal_pack_documents = json.dumps(documents_content)  # Store documents
                     
                     # Update the document session with the property ID
-                    session = DocumentSession.query.get("session_" + datetime.now().strftime('%Y%m%d_%H%M%S'))
+                    session = DocumentSession.query.get(session_id)
                     if session:
                         session.property_id = property_id
                     
@@ -1162,7 +1163,7 @@ def analyze_legal_pack():
                     'success': True,
                     'analysis': analysis,
                     'documents': documents_content,
-                    'session_id': "session_" + datetime.now().strftime('%Y%m%d_%H%M%S'),
+                    'session_id': session_id,
                     'total_tokens': total_tokens
                 })
             except Exception as e:
