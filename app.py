@@ -1326,110 +1326,98 @@ def legal_pack_analyzer(property_id):
 
 @app.route('/analyze-legal-pack', methods=['POST'])
 def analyze_legal_pack():
-    """Handle legal pack file upload and analysis."""
     try:
-        logger.info("Starting legal pack analysis...")
-        
-        # Get property ID from form
-        property_id = request.form.get('property_id')
-        logger.info(f"Analyzing legal pack for property ID: {property_id}")
+        app.logger.info("Starting legal pack analysis...")
         
         if 'files[]' not in request.files:
-            logger.error("No files part in request")
+            app.logger.error("No files part in request")
             return jsonify({'error': 'No files uploaded'}), 400
-            
+        
         files = request.files.getlist('files[]')
-        if not files or all(not file.filename for file in files):
-            logger.error("No selected files")
-            return jsonify({'error': 'No selected files'}), 400
-            
-        # Create temporary directory for file processing
+        if not files or all(file.filename == '' for file in files):
+            app.logger.error("No files selected")
+            return jsonify({'error': 'No files selected'}), 400
+
+        property_id = request.form.get('property_id')
+        if not property_id:
+            app.logger.error("Property ID is missing")
+            return jsonify({'error': 'Property ID is required'}), 400
+
+        app.logger.info(f"Processing legal pack for property ID: {property_id}")
+        app.logger.info(f"Number of files received: {len(files)}")
+
+        # Create a temporary directory for processing
         with tempfile.TemporaryDirectory() as temp_dir:
-            logger.info(f"Created temporary directory: {temp_dir}")
-            processed_files = []
-            total_chars = 0
+            app.logger.info(f"Created temporary directory: {temp_dir}")
             
-            try:
-                # Process each uploaded file
-                for file in files:
-                    if file and file.filename:
-                        logger.info(f"Processing file: {file.filename}")
-                        
-                        # Save file to temp directory
-                        file_path = os.path.join(temp_dir, secure_filename(file.filename))
-                        file.save(file_path)
-                        logger.info(f"Saved file to: {file_path}")
-                        
-                        # Process file based on type
-                        if file.filename.lower().endswith('.zip'):
-                            logger.info("Processing ZIP file...")
-                            extracted_files = process_zip_file(file_path)
-                            processed_files.extend(extracted_files)
-                            logger.info(f"Processed {len(extracted_files)} files from ZIP")
-                        else:
-                            try:
-                                text_content = process_document(file_path)
-                                char_count = len(text_content)
-                                total_chars += char_count
-                                logger.info(f"Document '{file.filename}': {char_count} characters")
-                                processed_files.append(file_path)
-                            except Exception as e:
-                                logger.error(f"Error processing file {file.filename}: {str(e)}")
-                                return jsonify({'error': f"Error processing {file.filename}: {str(e)}"}), 500
-                
-                logger.info(f"Total characters across all documents: {total_chars}")
-                
-                # Start Claude analysis
-                logger.info("Starting Claude analysis...")
-                try:
-                    # Generate a unique session ID
-                    session_id = str(uuid.uuid4())
-                    logger.info(f"Created session ID: {session_id}")
+            # Process each file
+            all_text = []
+            for file in files:
+                if file and file.filename:
+                    filename = secure_filename(file.filename)
+                    filepath = os.path.join(temp_dir, filename)
+                    file.save(filepath)
                     
-                    # Process documents and get analysis
-                    documents = process_documents(processed_files)
-                    logger.info("Documents processed successfully")
+                    app.logger.info(f"Processing file: {filename}")
+                    file_size = os.path.getsize(filepath)
+                    app.logger.info(f"File size: {file_size / 1024:.2f} KB")
                     
-                    # Save to database
-                    save_documents(session_id, processed_files)
-                    logger.info("Documents saved to database")
-                    
-                    # Update property with legal pack info
-                    with app.app_context():
-                        property = Property.query.get(property_id)
-                        if property:
-                            property.legal_pack_analyzed_at = datetime.utcnow()
-                            property.legal_pack_session_id = session_id
-                            db.session.commit()
-                            logger.info(f"Updated property {property_id} with analysis timestamp")
-                    
-                    return jsonify({
-                        'success': True,
-                        'session_id': session_id,
-                        'message': 'Analysis complete'
-                    })
-                    
-                except Exception as e:
-                    logger.error(f"Error during Claude analysis: {str(e)}")
-                    return jsonify({'error': f'Error during analysis: {str(e)}'}), 500
-                    
-            except Exception as e:
-                logger.error(f"Error processing files: {str(e)}")
-                return jsonify({'error': f'Error processing files: {str(e)}'}), 500
-                
-            finally:
-                # Clean up any remaining files
-                logger.info("Cleaning up temporary files...")
-                for file_path in processed_files:
+                    # Process the document based on its type
                     try:
-                        if os.path.exists(file_path):
-                            os.remove(file_path)
+                        start_time = time.time()
+                        text = process_document(filepath)
+                        processing_time = time.time() - start_time
+                        
+                        char_count = len(text)
+                        word_count = len(text.split())
+                        
+                        app.logger.info(f"Successfully processed {filename}:")
+                        app.logger.info(f"- Processing time: {processing_time:.2f} seconds")
+                        app.logger.info(f"- Characters extracted: {char_count}")
+                        app.logger.info(f"- Words extracted: {word_count}")
+                        
+                        all_text.append(text)
                     except Exception as e:
-                        logger.error(f"Error cleaning up file {file_path}: {str(e)}")
-                
+                        app.logger.error(f"Error processing file {filename}: {str(e)}")
+                        return jsonify({'error': f'Error processing file {filename}: {str(e)}'}), 500
+
+            # Combine all text
+            combined_text = '\n\n'.join(all_text)
+            total_chars = len(combined_text)
+            total_words = len(combined_text.split())
+            
+            app.logger.info("Document processing completed:")
+            app.logger.info(f"- Total files processed: {len(files)}")
+            app.logger.info(f"- Total characters: {total_chars}")
+            app.logger.info(f"- Total words: {total_words}")
+            
+            # Create analysis record
+            try:
+                analysis = Analysis(
+                    property_id=property_id,
+                    content=combined_text,
+                    timestamp=datetime.utcnow()
+                )
+                db.session.add(analysis)
+                db.session.commit()
+                app.logger.info(f"Analysis saved to database with ID: {analysis.id}")
+
+                return jsonify({
+                    'message': 'Analysis completed successfully',
+                    'analysis_id': analysis.id,
+                    'stats': {
+                        'total_files': len(files),
+                        'total_characters': total_chars,
+                        'total_words': total_words
+                    }
+                })
+            except Exception as e:
+                app.logger.error(f"Error saving to database: {str(e)}")
+                return jsonify({'error': f'Error saving analysis: {str(e)}'}), 500
+
     except Exception as e:
-        logger.error(f"Unexpected error in analyze_legal_pack: {str(e)}")
-        return jsonify({'error': 'Internal server error'}), 500
+        app.logger.error(f"Error in analyze_legal_pack: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/property/ask_followup', methods=['POST'])
 def ask_followup():
