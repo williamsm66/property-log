@@ -341,20 +341,31 @@ def extract_text_from_pdf(pdf_path):
         return ""
 
 def extract_text_from_doc(doc_path):
-    """Extract text from a Word file using python-docx for .docx and mammoth for .doc."""
+    """Extract text from Word documents using multiple methods for maximum compatibility."""
     try:
         logger.info(f"Attempting to extract text from Word document: {doc_path}")
         
+        # Try docx2txt first as it's the most reliable for both .doc and .docx
+        try:
+            logger.info("Attempting to extract text using docx2txt")
+            import docx2txt
+            text = docx2txt.process(doc_path)
+            if text and text.strip():
+                logger.info(f"Successfully extracted {len(text)} characters using docx2txt")
+                return text
+        except Exception as e:
+            logger.warning(f"docx2txt extraction failed: {str(e)}")
+
+        # If docx2txt fails and it's a .docx file, try python-docx as fallback
         if doc_path.lower().endswith('.docx'):
-            logger.info("Processing .docx file with python-docx")
             try:
+                logger.info("Falling back to python-docx for .docx file")
                 doc = Document(doc_path)
                 full_text = []
                 for para in doc.paragraphs:
                     if para.text.strip():
                         full_text.append(para.text)
                 
-                # Also extract text from tables
                 for table in doc.tables:
                     for row in table.rows:
                         for cell in row.cells:
@@ -362,29 +373,33 @@ def extract_text_from_doc(doc_path):
                                 full_text.append(cell.text)
                 
                 text = '\n'.join(full_text)
-                logger.info(f"Successfully extracted {len(text)} characters from .docx file")
-                return text
-            except Exception as e:
-                logger.error(f"Error extracting text from .docx: {str(e)}")
-                return None
-        else:
-            logger.info("Processing .doc file with mammoth")
-            try:
-                import mammoth
-                # Convert .doc to .docx in memory
-                with open(doc_path, 'rb') as docx_file:
-                    result = mammoth.extract_raw_text(docx_file)
-                text = result.value
-                
                 if text.strip():
-                    logger.info(f"Successfully extracted {len(text)} characters from .doc file")
+                    logger.info(f"Successfully extracted {len(text)} characters using python-docx")
                     return text
-                else:
-                    logger.error("Mammoth returned empty text")
-                    return None
             except Exception as e:
-                logger.error(f"Error extracting text with mammoth: {str(e)}")
-                return None
+                logger.warning(f"python-docx extraction failed: {str(e)}")
+        
+        # If all else fails, try a simple binary read
+        try:
+            logger.info("Attempting raw text extraction as last resort")
+            with open(doc_path, 'rb') as file:
+                raw_content = file.read()
+                # Try to decode with different encodings
+                for encoding in ['utf-8', 'latin-1', 'cp1252']:
+                    try:
+                        text = raw_content.decode(encoding)
+                        # Clean the text by removing non-printable characters
+                        text = ''.join(char for char in text if char.isprintable() or char in '\n\r\t')
+                        if text.strip():
+                            logger.info(f"Successfully extracted text using raw binary read with {encoding} encoding")
+                            return text
+                    except:
+                        continue
+        except Exception as e:
+            logger.warning(f"Raw text extraction failed: {str(e)}")
+
+        logger.error("All text extraction methods failed")
+        return None
             
     except Exception as e:
         logger.error(f"Error in extract_text_from_doc: {str(e)}")
