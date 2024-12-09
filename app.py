@@ -1512,7 +1512,8 @@ def system_check():
         env_vars = {
             'CLAUDE_API_KEY': bool(os.getenv('CLAUDE_API_KEY')),
             'DATABASE_URL': bool(os.getenv('DATABASE_URL'))
-        },
+        }
+        
         status = {
             'tesseract': False,
             'libreoffice': False,
@@ -1528,6 +1529,9 @@ def system_check():
         status['libreoffice'] = bool(soffice_path)
         
         return jsonify(status)
+    except Exception as e:
+        app.logger.error(f"Error in system check: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/test-property-details')
 def test_property_details():
