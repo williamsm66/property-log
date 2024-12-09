@@ -341,33 +341,49 @@ def extract_text_from_pdf(pdf_path):
         return ""
 
 def extract_text_from_doc(doc_path):
-    """Extract text from a Word file using Google Cloud Document AI."""
+    """Extract text from a Word file using Google Document AI."""
     try:
         logger.info(f"Attempting to extract text using Google Document AI from {doc_path}")
         
         # Initialize Document AI client
         client = documentai.DocumentProcessorServiceClient()
-        name = f"projects/property-log-444101/locations/us/processors/{os.getenv('GOOGLE_DOCAI_PROCESSOR_ID')}"
         
-        # Read the file
-        with open(doc_path, "rb") as doc_file:
-            document = {"content": doc_file.read()}
-            if doc_path.lower().endswith('.docx'):
-                document["mime_type"] = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            else:
-                document["mime_type"] = "application/msword"
-        
-        # Process the document
-        request = documentai.ProcessRequest(
-            name=name,
-            document=document
+        # Get the full resource name of processor
+        processor_name = client.processor_path(
+            os.getenv('GOOGLE_CLOUD_PROJECT'),
+            "us",  # Location
+            os.getenv('GOOGLE_DOCAI_PROCESSOR_ID')
         )
         
-        result = client.process_document(request=request)
+        # Read the file into memory
+        with open(doc_path, "rb") as doc_file:
+            doc_content = doc_file.read()
         
-        if result.document.text.strip():
-            logger.info(f"Successfully extracted text using Google Document AI from {doc_path}")
-            return result.document.text
+        # Set the correct MIME type based on file extension
+        if doc_path.lower().endswith('.docx'):
+            mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        else:
+            mime_type = "application/msword"
+            
+        logger.info(f"Using MIME type: {mime_type} for {doc_path}")
+        
+        # Configure the process request
+        request = documentai.ProcessRequest(
+            name=processor_name,
+            raw_document=documentai.RawDocument(
+                content=doc_content,
+                mime_type=mime_type
+            )
+        )
+        
+        # Process the document
+        logger.info("Sending document to Google Document AI for processing...")
+        result = client.process_document(request=request)
+        document = result.document
+        
+        if document.text.strip():
+            logger.info(f"Successfully extracted {len(document.text)} characters from document")
+            return document.text
         
         logger.error(f"Google Document AI returned empty text for {doc_path}")
         return None
@@ -380,59 +396,86 @@ def process_document(file_path):
     """Process a single document and return its text content."""
     try:
         _, ext = os.path.splitext(file_path.lower())
+        logger.info(f"Processing document: {file_path} (type: {ext})")
         
         if ext == '.pdf':
-            return extract_text_from_pdf(file_path)
+            logger.info(f"Extracting text from PDF: {file_path}")
+            content = extract_text_from_pdf(file_path)
         elif ext in ['.docx', '.doc']:
-            return extract_text_from_doc(file_path)
+            logger.info(f"Extracting text from Word document: {file_path}")
+            content = extract_text_from_doc(file_path)
         else:
             logger.warning(f"Unsupported file type: {ext} for file {file_path}")
             return None
+            
+        if content:
+            logger.info(f"Successfully extracted {len(content)} characters from {file_path}")
+        else:
+            logger.warning(f"No content extracted from {file_path}")
+        return content
     except Exception as e:
         logger.error(f"Error processing file {file_path}: {str(e)}")
         return None
 
 def process_zip_file(zip_file_path):
     """Process a ZIP file and extract its contents."""
+    logger.info(f"Starting to process ZIP file: {zip_file_path}")
     processed_files = []
     failed_files = []
     processing_summary = []
     total_tokens = 0
     
-    with tempfile.TemporaryDirectory() as temp_dir:
-        with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
-            # Extract files while filtering out macOS metadata
-            for file_info in zip_ref.filelist:
-                if not file_info.filename.startswith('__MACOSX/') and not file_info.filename.startswith('._'):
-                    zip_ref.extract(file_info, temp_dir)
-            
-            # Process each file in the zip
-            for root, _, files in os.walk(temp_dir):
-                for file in sorted(files):  # Sort files to ensure consistent processing order
-                    if file.startswith('.') or file.startswith('~'):  # Skip hidden and temporary files
-                        continue
-                        
-                    file_path = os.path.join(root, file)
-                    try:
-                        content = process_document(file_path)
-                        if content and content.strip():
-                            num_tokens = count_tokens(content)
-                            total_tokens += num_tokens
-                            processed_files.append({
-                                'name': file,
-                                'content': content,
-                                'length': len(content),
-                                'tokens': num_tokens
-                            })
-                            processing_summary.append(f"Successfully processed {file} ({num_tokens} tokens)")
-                        else:
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            logger.info(f"Created temporary directory: {temp_dir}")
+            with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
+                # Log ZIP contents
+                files_in_zip = [f for f in zip_ref.namelist() if not f.startswith('__MACOSX/') and not f.startswith('._')]
+                logger.info(f"Files in ZIP: {files_in_zip}")
+                
+                # Extract files while filtering out macOS metadata
+                for file_info in zip_ref.filelist:
+                    if not file_info.filename.startswith('__MACOSX/') and not file_info.filename.startswith('._'):
+                        zip_ref.extract(file_info, temp_dir)
+                        logger.info(f"Extracted: {file_info.filename}")
+                
+                # Process each file in the zip
+                for root, _, files in os.walk(temp_dir):
+                    for file in sorted(files):  # Sort files to ensure consistent processing order
+                        if file.startswith('.') or file.startswith('~'):  # Skip hidden and temporary files
+                            logger.info(f"Skipping hidden/temp file: {file}")
+                            continue
+                            
+                        file_path = os.path.join(root, file)
+                        logger.info(f"Processing file from ZIP: {file}")
+                        try:
+                            content = process_document(file_path)
+                            if content and content.strip():
+                                num_tokens = count_tokens(content)
+                                total_tokens += num_tokens
+                                processed_files.append({
+                                    'name': file,
+                                    'content': content,
+                                    'length': len(content),
+                                    'tokens': num_tokens
+                                })
+                                msg = f"Successfully processed {file} ({num_tokens} tokens)"
+                                logger.info(msg)
+                                processing_summary.append(msg)
+                            else:
+                                msg = f"Failed to extract content from {file}"
+                                logger.warning(msg)
+                                failed_files.append(file)
+                                processing_summary.append(msg)
+                        except Exception as e:
+                            msg = f"Error processing {file}: {str(e)}"
+                            logger.error(msg)
                             failed_files.append(file)
-                            processing_summary.append(f"Failed to extract content from {file}")
-                    except Exception as e:
-                        failed_files.append(file)
-                        processing_summary.append(f"Error processing {file}: {str(e)}")
-                        logger.error(f"Error processing {file}: {str(e)}")
+                            processing_summary.append(msg)
 
+    except Exception as e:
+        logger.error(f"Error processing ZIP file: {str(e)}")
+        raise
     # Save processing results
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     results = {
@@ -497,23 +540,15 @@ def load_documents(session_id):
 
 def analyze_with_claude(documents_content, processing_summary=None, follow_up_question=None, initial_analysis=None, qa_history=None):
     """Analyze all documents together using Claude API."""
-    token_summary = None
     try:
-        # Initialize the Anthropic client with the API key from environment variables
-        api_key = os.getenv('CLAUDE_API_KEY')
+        # Initialize Anthropic client
+        api_key = os.getenv('ANTHROPIC_API_KEY')
         if not api_key:
-            logger.error("CLAUDE_API_KEY environment variable is not set")
-            raise ValueError("CLAUDE_API_KEY environment variable is not set")
-        
-        logger.info(f"Analyzing documents with Claude (follow_up: {'yes' if follow_up_question else 'no'})")
-        logger.info(f"API Key length: {len(api_key)}")  # Log key length for verification
-        
-        try:
-            client = anthropic.Anthropic(api_key=api_key)
-            logger.info("Successfully initialized Anthropic client")
-        except Exception as client_error:
-            logger.error(f"Failed to initialize Anthropic client: {str(client_error)}")
-            raise ValueError(f"Failed to initialize Anthropic client: {str(client_error)}")
+            raise ValueError("ANTHROPIC_API_KEY environment variable is not set")
+            
+        logger.info("Initializing Anthropic client...")
+        client = anthropic.Anthropic(api_key=api_key)
+        logger.info("Successfully initialized Anthropic client")
         
         # Prepare the prompt and track tokens
         total_tokens = 0
@@ -1223,7 +1258,7 @@ def system_check():
         'tesseract': False,
         'libreoffice': False,
         'environment': {
-            'CLAUDE_API_KEY': bool(os.getenv('CLAUDE_API_KEY')),
+            'ANTHROPIC_API_KEY': bool(os.getenv('ANTHROPIC_API_KEY')),
             'DATABASE_URL': bool(os.getenv('DATABASE_URL'))
         },
         'anthropic_version': anthropic.__version__
