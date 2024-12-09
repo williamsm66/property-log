@@ -1118,12 +1118,14 @@ def analyze_legal_pack():
             if not documents_content:
                 return jsonify({'error': 'No valid documents found or no text could be extracted'}), 400
 
-            # Save processing results
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            session_id = f"session_{timestamp}"
+            # Count total tokens and per-document tokens
+            total_tokens = 0
+            for doc in documents_content:
+                doc_tokens = count_tokens(doc['content'])
+                doc['tokens'] = doc_tokens
+                total_tokens += doc_tokens
+                app.logger.info(f"Document {doc['name']}: {doc_tokens} tokens")
             
-            # Count total tokens
-            total_tokens = sum(count_tokens(doc['content']) for doc in documents_content)
             app.logger.info(f"Total tokens across all documents: {total_tokens}")
             app.logger.info(f"Total tokens before analysis: {total_tokens}")
             
@@ -1132,7 +1134,7 @@ def analyze_legal_pack():
                 analysis = analyze_with_claude(documents_content)
                 
                 # Save documents with initial analysis and property ID
-                save_success = save_documents(session_id, documents_content, analysis, [])
+                save_success = save_documents(session_id="session_" + datetime.now().strftime('%Y%m%d_%H%M%S'), documents_content, analysis, [])
                 if not save_success:
                     return jsonify({'error': 'Failed to save documents'}), 500
                 
@@ -1140,13 +1142,13 @@ def analyze_legal_pack():
                 property = Property.query.get(property_id)
                 if property:
                     property.legal_pack_analysis = analysis
-                    property.legal_pack_session_id = session_id
+                    property.legal_pack_session_id = "session_" + datetime.now().strftime('%Y%m%d_%H%M%S')
                     property.legal_pack_analyzed_at = datetime.now()
                     property.legal_pack_qa_history = '[]'  # Initialize empty QA history
                     property.legal_pack_documents = json.dumps(documents_content)  # Store documents
                     
                     # Update the document session with the property ID
-                    session = DocumentSession.query.get(session_id)
+                    session = DocumentSession.query.get("session_" + datetime.now().strftime('%Y%m%d_%H%M%S'))
                     if session:
                         session.property_id = property_id
                     
@@ -1160,7 +1162,8 @@ def analyze_legal_pack():
                     'success': True,
                     'analysis': analysis,
                     'documents': documents_content,
-                    'session_id': session_id
+                    'session_id': "session_" + datetime.now().strftime('%Y%m%d_%H%M%S'),
+                    'total_tokens': total_tokens
                 })
             except Exception as e:
                 app.logger.error(f"Error in analyze_legal_pack: {str(e)}")

@@ -289,7 +289,7 @@
                                 <h4 class="text-lg font-medium text-green-700 mb-4">Successfully Processed Files:</h4>
                                 <ul class="list-disc pl-5 space-y-2">
                                     ${data.documents.map(doc => 
-                                        `<li class="text-gray-700">${escapeHtml(doc.name)} (${Math.ceil(doc.content.length / 4)} tokens)</li>`
+                                        `<li class="text-gray-700">${escapeHtml(doc.name)} (${doc.tokens.toLocaleString()} tokens)</li>`
                                     ).join('')}
                                 </ul>
                             </div>
@@ -301,16 +301,14 @@
                                     <h5 class="text-md font-medium text-blue-700 mb-2">Per Document Token Usage:</h5>
                                     <ul class="list-none space-y-2">
                                         ${data.documents.map(doc => 
-                                            `<li class="text-gray-700">${escapeHtml(doc.name)}: ${Math.ceil(doc.content.length / 4)} tokens</li>`
+                                            `<li class="text-gray-700">${escapeHtml(doc.name)}: ${doc.tokens.toLocaleString()} tokens</li>`
                                         ).join('')}
                                     </ul>
                                 </div>
                                 
                                 <div class="pt-4 border-t border-blue-200">
                                     <h5 class="text-md font-medium text-blue-700 mb-2">Total Token Usage:</h5>
-                                    <p class="text-gray-700">${data.documents.reduce((sum, doc) => 
-                                        sum + Math.ceil(doc.content.length / 4), 0
-                                    ).toLocaleString()} tokens</p>
+                                    <p class="text-gray-700">${data.total_tokens.toLocaleString()} tokens</p>
                                 </div>
                             </div>
                         </div>
