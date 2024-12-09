@@ -271,7 +271,6 @@
             console.log('Generated token HTML:', tokenHtml); // Debug log
             tokenDetailsDiv.innerHTML = tokenHtml;
             processingSection.classList.remove('hidden');
-            console.log('Processing section visibility:', processingSection.classList.contains('hidden')); // Debug log
         }
 
         function displayProcessingSummary(summary) {
@@ -309,29 +308,9 @@
                 html += '</ul></div>';
             }
 
-            // Display failed files if any
-            const failedFiles = lines.filter(line => line.startsWith('Failed to extract') || line.startsWith('Error processing'));
-            if (failedFiles.length > 0) {
-                html += '<div class="mt-4">';
-                html += '<h6 class="font-semibold text-red-700 mb-2">Failed Files:</h6>';
-                html += '<ul class="list-disc pl-5 space-y-1">';
-                failedFiles.forEach(line => {
-                    html += `<li class="text-gray-700">${escapeHtml(line)}</li>`;
-                });
-                html += '</ul></div>';
-            }
-
             console.log('Generated summary HTML:', html); // Debug log
             statusList.innerHTML = html;
             processingSection.classList.remove('hidden');
-            console.log('Processing section visibility:', processingSection.classList.contains('hidden')); // Debug log
-        }
-
-        function formatAnswer(text) {
-            return text
-                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                .replace(/\*(.*?)\*/g, '<em>$1</em>')
-                .replace(/\n/g, '<br>');
         }
 
         async function analyzeLegalPack(e) {
@@ -404,7 +383,7 @@
                     resultsSection.innerHTML = ''; // Clear existing content
                     resultsSection.appendChild(container);
 
-                    // Display the processing summaries
+                    // Now display the summaries
                     if (data.processing_summary) {
                         console.log('Calling displayProcessingSummary');
                         displayProcessingSummary(data.processing_summary);
@@ -415,10 +394,8 @@
                         displayTokenUsage(data.token_usage);
                     }
 
-                    // Hide the loading spinner
+                    // Hide the loading spinner and clear the file input
                     hideLoadingSpinner();
-                    
-                    // Clear the file input to allow new uploads
                     fileInput.value = '';
                 }
             } catch (error) {
@@ -510,6 +487,13 @@
             }
         }
         
+        function formatAnswer(text) {
+            return text
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/\n/g, '<br>');
+        }
+
         document.getElementById('uploadForm').addEventListener('submit', analyzeLegalPack);
         document.getElementById('followupForm').addEventListener('submit', askFollowUp);
     </script>
