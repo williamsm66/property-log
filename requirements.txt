@@ -21,3 +21,4 @@ reportlab==4.1.0
 Pillow>=10.0.0
 google-cloud-vision==3.8.1
 google-cloud-documentai==3.0.1
+psutil==5.9.7
