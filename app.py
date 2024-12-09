@@ -492,6 +492,15 @@ def process_document(file_path):
         elif ext in ['.docx', '.doc']:
             logger.info(f"Extracting text from Word document: {file_path}")
             content = extract_text_from_doc(file_path)
+        elif ext == '.zip':
+            logger.info(f"Processing ZIP file: {file_path}")
+            processed_files, failed_files, processing_summary = process_zip_file(file_path)
+            if processed_files:
+                content = "\n\n".join(doc['content'] for doc in processed_files)
+                logger.info(f"Successfully extracted content from {len(processed_files)} files in ZIP")
+            else:
+                logger.warning("No content extracted from ZIP file")
+                content = None
         else:
             logger.warning(f"Unsupported file type: {ext} for file {file_path}")
             return None
