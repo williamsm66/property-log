@@ -21,7 +21,8 @@ services:
     startCommand: |
       source $HOME/.profile
       export GOOGLE_APPLICATION_CREDENTIALS="/opt/render/project/src/.google/credentials.json"
-      gunicorn -c gunicorn_config.py app:app
+      export PORT=10000
+      gunicorn -c gunicorn_config.py -b :$PORT app:app
     healthCheckPath: /
     healthCheckTimeout: 300
     autoscaling:
