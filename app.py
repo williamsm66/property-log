@@ -45,13 +45,26 @@ logger.setLevel(logging.INFO)
 logging.getLogger('werkzeug').setLevel(logging.INFO)
 
 # Load environment variables
+app.logger.info("Starting application initialization...")
 load_dotenv()
+app.logger.info("Environment variables loaded")
 
 # Initialize Google Cloud clients
-vision_client = vision.ImageAnnotatorClient()
+try:
+    vision_client = vision.ImageAnnotatorClient()
+    app.logger.info("Google Vision client initialized successfully")
+except Exception as e:
+    app.logger.error(f"Failed to initialize Google Vision client: {str(e)}")
 
-# Set timeout to 5 minutes
-WSGIRequestHandler.protocol_version = "HTTP/1.1"
+# Check required environment variables
+required_vars = ['CLAUDE_API_KEY', 'DATABASE_URL', 'GOOGLE_APPLICATION_CREDENTIALS', 'GOOGLE_CLOUD_PROJECT']
+missing_vars = [var for var in required_vars if not os.getenv(var)]
+if missing_vars:
+    app.logger.warning(f"Missing required environment variables: {', '.join(missing_vars)}")
+else:
+    app.logger.info("All required environment variables are set")
+
+app.logger.info("Application initialization completed")
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -131,6 +144,21 @@ if not os.path.exists(db_path):
 
 # Initialize database
 db = SQLAlchemy(app)
+
+def init_db():
+    """Initialize database and create tables."""
+    try:
+        app.logger.info("Starting database initialization...")
+        with app.app_context():
+            db.create_all()
+            app.logger.info("Database tables created successfully")
+    except Exception as e:
+        app.logger.error(f"Failed to initialize database: {str(e)}")
+        raise
+
+# Initialize database before running the app
+init_db()
+app.logger.info("Database initialization completed")
 
 # Add new model for document sessions
 class DocumentSession(db.Model):
@@ -288,15 +316,19 @@ class Property(db.Model):
 
 # Create database and tables
 def init_db():
-    with app.app_context():
-        # Drop all tables first
-        db.drop_all()
-        # Create all tables
-        db.create_all()
-        print("Database initialized successfully!")
+    """Initialize database and create tables."""
+    try:
+        app.logger.info("Starting database initialization...")
+        with app.app_context():
+            db.create_all()
+            app.logger.info("Database tables created successfully")
+    except Exception as e:
+        app.logger.error(f"Failed to initialize database: {str(e)}")
+        raise
 
 # Initialize database before running the app
 init_db()
+app.logger.info("Database initialization completed")
 
 def save_documents(session_id, processed_files, initial_analysis=None, qa_history=None):
     """Save documents and analysis history to database."""
@@ -894,51 +926,93 @@ def process_documents(file_paths, follow_up=False):
         client = anthropic.Anthropic(api_key=api_key)
         app.logger.info("Successfully initialized Anthropic client")
         
-        # Process documents in smaller batches
-        MAX_BATCH_SIZE = 3
-        MAX_TOKENS_PER_BATCH = 15000
+        # Process documents in smaller chunks
+        MAX_TOKENS_PER_REQUEST = 3500
+        all_results = []
+        current_chunk = []
+        current_chunk_tokens = 0
         
-        all_documents = []
-        current_batch = []
-        current_batch_tokens = 0
-        
+        # First pass: Calculate tokens for each document
+        documents_with_tokens = []
         for file_path in file_paths:
-            doc_content = extract_text_from_document(file_path)
-            token_count = count_tokens(doc_content)
-            app.logger.info(f"Document {os.path.basename(file_path)}: {token_count} tokens")
-            
-            # If adding this document would exceed token limit, process current batch
-            if current_batch_tokens + token_count > MAX_TOKENS_PER_BATCH or len(current_batch) >= MAX_BATCH_SIZE:
-                # Process current batch
-                batch_results = analyze_document_batch(current_batch, client)
-                all_documents.extend(batch_results)
-                current_batch = []
-                current_batch_tokens = 0
-            
-            current_batch.append((file_path, doc_content))
-            current_batch_tokens += token_count
+            content = extract_text_from_document(file_path)
+            tokens = count_tokens(content)
+            app.logger.info(f"Document {os.path.basename(file_path)}: {tokens} tokens")
+            documents_with_tokens.append((file_path, content, tokens))
         
-        # Process remaining documents
-        if current_batch:
-            batch_results = analyze_document_batch(current_batch, client)
-            all_documents.extend(batch_results)
+        app.logger.info(f"Total tokens across all documents: {sum(doc[2] for doc in documents_with_tokens)}")
         
-        app.logger.info(f"Total tokens for all documents: {sum(count_tokens(doc[1]) for doc in current_batch)}")
-        return all_documents
+        # Second pass: Process documents in chunks
+        for file_path, content, tokens in documents_with_tokens:
+            # If this document would exceed token limit, process current chunk first
+            if current_chunk_tokens + tokens > MAX_TOKENS_PER_REQUEST:
+                app.logger.info(f"Processing chunk of {len(current_chunk)} documents ({current_chunk_tokens} tokens)")
+                chunk_results = analyze_document_batch(current_chunk, client)
+                all_results.extend(chunk_results)
+                current_chunk = []
+                current_chunk_tokens = 0
+                
+                # Force garbage collection after processing chunk
+                gc.collect()
+            
+            # If single document is too large, split it
+            if tokens > MAX_TOKENS_PER_REQUEST:
+                app.logger.info(f"Large document detected: {os.path.basename(file_path)} ({tokens} tokens). Splitting into chunks.")
+                doc_chunks = split_document_into_chunks(content, MAX_TOKENS_PER_REQUEST)
+                for chunk_num, chunk in enumerate(doc_chunks, 1):
+                    chunk_tokens = count_tokens(chunk)
+                    app.logger.info(f"Processing chunk {chunk_num}/{len(doc_chunks)} of {os.path.basename(file_path)} ({chunk_tokens} tokens)")
+                    chunk_result = analyze_document_batch([(file_path, chunk)], client)
+                    all_results.extend(chunk_result)
+                    gc.collect()
+            else:
+                current_chunk.append((file_path, content))
+                current_chunk_tokens += tokens
+        
+        # Process any remaining documents
+        if current_chunk:
+            app.logger.info(f"Processing final chunk of {len(current_chunk)} documents ({current_chunk_tokens} tokens)")
+            chunk_results = analyze_document_batch(current_chunk, client)
+            all_results.extend(chunk_results)
+        
+        return all_results
         
     except Exception as e:
         app.logger.error(f"Error processing documents: {str(e)}")
         raise
+
+def split_document_into_chunks(content, max_tokens):
+    """Split a document into chunks that don't exceed max_tokens."""
+    chunks = []
+    sentences = content.split('. ')
+    current_chunk = []
+    current_chunk_tokens = 0
+    
+    for sentence in sentences:
+        sentence_tokens = count_tokens(sentence)
+        
+        if current_chunk_tokens + sentence_tokens > max_tokens:
+            # Join current chunk and add to chunks
+            chunks.append('. '.join(current_chunk) + '.')
+            current_chunk = [sentence]
+            current_chunk_tokens = sentence_tokens
+        else:
+            current_chunk.append(sentence)
+            current_chunk_tokens += sentence_tokens
+    
+    # Add any remaining content
+    if current_chunk:
+        chunks.append('. '.join(current_chunk) + '.')
+    
+    return chunks
 
 def analyze_document_batch(document_batch, client):
     """Analyze a batch of documents."""
     results = []
     for file_path, content in document_batch:
         try:
-            # Process each document in the batch
             app.logger.info(f"Sending analysis request to Claude for {os.path.basename(file_path)}")
             
-            # Your existing analysis logic here
             message = client.messages.create(
                 model="claude-3-opus-20240229",
                 max_tokens=4000,
@@ -956,6 +1030,9 @@ def analyze_document_batch(document_batch, client):
                 'file_path': file_path,
                 'analysis': message.content
             })
+            
+            # Add a small delay between requests to prevent rate limiting
+            time.sleep(1)
             
         except Exception as e:
             app.logger.error(f"Error analyzing document {os.path.basename(file_path)}: {str(e)}")
