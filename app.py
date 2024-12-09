@@ -32,10 +32,15 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.StreamHandler()  # This will output to console
+        logging.StreamHandler(),  # Output to console
+        logging.FileHandler('app.log')  # Also save to file
     ]
 )
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Ensure Flask's built-in logger also shows INFO messages
+logging.getLogger('werkzeug').setLevel(logging.INFO)
 
 # Load environment variables
 load_dotenv()
@@ -597,9 +602,7 @@ Format your response in these sections:
                     temperature=0
                 )
                 logger.info("Successfully received response from Claude for follow-up")
-                logger.info(f"Response type: {type(response)}")
-                logger.info(f"Response attributes: {dir(response)}")
-                analysis = response.content
+                return response.content[0].text
             except Exception as api_error:
                 logger.error(f"Claude API error during follow-up: {str(api_error)}")
                 logger.error(f"API error type: {type(api_error)}")
@@ -684,20 +687,18 @@ List any important information that appears to be missing from the legal pack
                     }],
                     temperature=0
                 )
-                logger.info("Successfully received response from Claude for initial analysis")
-                logger.info(f"Response type: {type(response)}")
-                logger.info(f"Response attributes: {dir(response)}")
-                analysis = response.content
+                logger.info("Successfully received response from Claude")
+                return response.content[0].text
             except Exception as api_error:
                 logger.error(f"Claude API error during initial analysis: {str(api_error)}")
                 logger.error(f"API error type: {type(api_error)}")
                 logger.error(f"API error details: {api_error.__dict__}")
                 raise ValueError(f"Failed to get analysis from Claude API: {str(api_error)}")
 
-        if not analysis or not analysis.strip():
+        if not response:
             raise ValueError("Empty response from Claude API")
             
-        logger.info(f"Received analysis of length: {len(analysis)}")
+        logger.info(f"Received analysis of length: {len(response)}")
         
         # Update token summary with prompt tokens
         token_summary['prompt_tokens'] = total_tokens
@@ -705,12 +706,12 @@ List any important information that appears to be missing from the legal pack
         # Return appropriate key based on whether this is a follow-up or initial analysis
         if follow_up_question:
             return {
-                'answer': analysis,
+                'answer': response,
                 'token_usage': token_summary
             }
         else:
             return {
-                'analysis': analysis,
+                'analysis': response,
                 'token_usage': token_summary
             }
         
