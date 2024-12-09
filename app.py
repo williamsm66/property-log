@@ -828,7 +828,34 @@ List any important information that appears to be missing from the legal pack
 
 @app.route('/')
 def home():
-    return render_template('index.html')
+    """Render home page and serve as health check endpoint."""
+    try:
+        # Quick DB check
+        Property.query.limit(1).all()
+        return render_template('index.html')
+    except Exception as e:
+        app.logger.error(f"Health check failed: {str(e)}")
+        return "Service is starting up or experiencing issues", 503
+
+@app.errorhandler(500)
+def internal_server_error(e):
+    """Handle internal server errors."""
+    app.logger.error(f"Internal Server Error: {str(e)}")
+    return jsonify({
+        'error': 'Internal Server Error',
+        'message': str(e),
+        'suggestion': 'Please try again with a smaller file or fewer pages'
+    }), 500
+
+@app.errorhandler(413)
+def request_entity_too_large(e):
+    """Handle payload too large errors."""
+    app.logger.error(f"Payload Too Large: {str(e)}")
+    return jsonify({
+        'error': 'File Too Large',
+        'message': str(e),
+        'suggestion': 'Please try uploading a smaller file (max 100MB)'
+    }), 413
 
 @app.route('/calculator_test')
 def calculator():

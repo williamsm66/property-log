@@ -21,7 +21,15 @@ services:
     startCommand: |
       source $HOME/.profile
       export GOOGLE_APPLICATION_CREDENTIALS="/opt/render/project/src/.google/credentials.json"
-      gunicorn app:app
+      gunicorn -c gunicorn_config.py app:app
+    healthCheckPath: /
+    healthCheckTimeout: 300
+    autoscaling:
+      maxConcurrency: 50
+    disk:
+      name: tmp
+      mountPath: /tmp
+      sizeGB: 1
     envVars:
       - key: PYTHON_VERSION
         value: 3.9.0
@@ -41,6 +49,10 @@ services:
         sync: false
       - key: LIBREOFFICE_PATH
         value: /usr/bin/soffice
+      - key: WEB_CONCURRENCY
+        value: "2"
+      - key: GUNICORN_CMD_ARGS
+        value: "--timeout 300 --keep-alive 5 --max-requests 1000 --max-requests-jitter 50 --access-logfile - --error-logfile - --log-level info"
   databases:
   - name: property-log-db
     databaseName: property_log
