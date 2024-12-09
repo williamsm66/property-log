@@ -338,34 +338,47 @@ def extract_text_from_pdf(pdf_path):
 def extract_text_from_doc(doc_path):
     """Extract text from a Word file (.doc or .docx)."""
     try:
-        # Try python-docx first for .docx files
+        # Try mammoth first (works well for both .doc and .docx)
+        try:
+            import mammoth
+            logger.info(f"Attempting to extract text using mammoth from {doc_path}")
+            with open(doc_path, 'rb') as docx_file:
+                result = mammoth.extract_raw_text(docx_file)
+                if result.value.strip():
+                    logger.info(f"Successfully extracted text using mammoth from {doc_path}")
+                    return result.value
+        except Exception as e:
+            logger.error(f"Error using mammoth: {str(e)}")
+
+        # Try python-docx as fallback for .docx
         if doc_path.lower().endswith('.docx'):
             try:
                 doc = Document(doc_path)
                 text = '\n'.join([paragraph.text for paragraph in doc.paragraphs])
                 if text.strip():
-                    logger.info(f"Successfully extracted text from {doc_path} using python-docx")
+                    logger.info(f"Successfully extracted text using python-docx from {doc_path}")
                     return text
             except Exception as e:
-                logger.error(f"Error processing file with python-docx: {str(e)}")
+                logger.error(f"Error using python-docx: {str(e)}")
 
-        # For .doc files or if python-docx fails, try catdoc
-        try:
-            logger.info(f"Attempting to extract text using catdoc from {doc_path}")
-            result = subprocess.run(['catdoc', doc_path], capture_output=True, text=True)
-            if result.stdout.strip():
-                logger.info(f"Successfully extracted text using catdoc from {doc_path}")
-                return result.stdout
-            logger.error(f"Catdoc returned empty text for {doc_path}")
-        except Exception as e:
-            logger.error(f"Error using catdoc: {str(e)}")
+        # Try catdoc as fallback for .doc
+        if doc_path.lower().endswith('.doc'):
+            try:
+                logger.info(f"Attempting to extract text using catdoc from {doc_path}")
+                result = subprocess.run(['/usr/bin/catdoc', doc_path], capture_output=True, text=True)
+                if result.stdout.strip():
+                    logger.info(f"Successfully extracted text using catdoc from {doc_path}")
+                    return result.stdout
+            except Exception as e:
+                logger.error(f"Error using catdoc: {str(e)}")
 
-        # If both methods fail, try using LibreOffice to convert to text
+        # Last resort: try LibreOffice
         try:
             logger.info(f"Attempting to extract text using LibreOffice from {doc_path}")
+            libreoffice_path = os.getenv('LIBREOFFICE_PATH', '/usr/bin/soffice')
             with tempfile.TemporaryDirectory() as temp_dir:
                 output_file = os.path.join(temp_dir, "output.txt")
-                subprocess.run(['soffice', '--headless', '--convert-to', 'txt:Text', '--outdir', temp_dir, doc_path], 
+                subprocess.run([libreoffice_path, '--headless', '--convert-to', 'txt:Text', '--outdir', temp_dir, doc_path], 
                              capture_output=True)
                 
                 if os.path.exists(output_file):
@@ -374,7 +387,6 @@ def extract_text_from_doc(doc_path):
                         if text.strip():
                             logger.info(f"Successfully extracted text using LibreOffice from {doc_path}")
                             return text
-                logger.error(f"LibreOffice conversion failed for {doc_path}")
         except Exception as e:
             logger.error(f"Error using LibreOffice conversion: {str(e)}")
 

@@ -31,6 +31,8 @@ services:
     startCommand: |
       source $HOME/.profile
       export GOOGLE_APPLICATION_CREDENTIALS="/opt/render/project/src/.google/credentials.json"
+      export PATH="/usr/bin:/usr/local/bin:$PATH"
+      export LIBREOFFICE_PATH="/usr/bin/soffice"
       gunicorn app:app
     envVars:
       - key: PYTHON_VERSION
@@ -42,13 +44,15 @@ services:
           name: property-log-db
           property: connectionString
       - key: PATH
-        value: /opt/render/project/src/bin:$PATH
+        value: /usr/bin:/usr/local/bin:/opt/render/project/src/bin:$PATH
       - key: LD_LIBRARY_PATH
         value: /opt/render/project/src/lib:$LD_LIBRARY_PATH
       - key: TESSDATA_PREFIX
         value: /opt/render/project/src/share/tessdata
       - key: GOOGLE_CLOUD_CREDENTIALS
-        sync: false  # This will be set manually in Render dashboard
+        sync: false
+      - key: LIBREOFFICE_PATH
+        value: /usr/bin/soffice
   databases:
   - name: property-log-db
     databaseName: property_log
