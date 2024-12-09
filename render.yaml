@@ -5,23 +5,10 @@ services:
     buildCommand: |
       apt-get update && apt-get install -y \
         build-essential \
-        autoconf \
-        automake \
-        libtool \
         pkg-config \
-        libpng-dev \
-        libjpeg-dev \
-        libtiff-dev \
-        zlib1g-dev \
-        libleptonica-dev \
-        libicu-dev \
-        libpango1.0-dev \
-        libcairo2-dev \
-        libreoffice \
         poppler-utils \
         tesseract-ocr \
-        tesseract-ocr-eng \
-        catdoc
+        tesseract-ocr-eng
       pip install -r requirements.txt
       chmod +x setup_binaries.sh
       ./setup_binaries.sh
@@ -31,8 +18,6 @@ services:
     startCommand: |
       source $HOME/.profile
       export GOOGLE_APPLICATION_CREDENTIALS="/opt/render/project/src/.google/credentials.json"
-      export PATH="/usr/bin:/usr/local/bin:$PATH"
-      export LIBREOFFICE_PATH="/usr/bin/soffice"
       gunicorn app:app
     envVars:
       - key: PYTHON_VERSION

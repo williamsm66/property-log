@@ -336,65 +336,39 @@ def extract_text_from_pdf(pdf_path):
         return ""
 
 def extract_text_from_doc(doc_path):
-    """Extract text from a Word file (.doc or .docx)."""
+    """Extract text from a Word file using Google Cloud Document AI."""
     try:
-        # Try mammoth first (works well for both .doc and .docx)
-        try:
-            import mammoth
-            logger.info(f"Attempting to extract text using mammoth from {doc_path}")
-            with open(doc_path, 'rb') as docx_file:
-                result = mammoth.extract_raw_text(docx_file)
-                if result.value.strip():
-                    logger.info(f"Successfully extracted text using mammoth from {doc_path}")
-                    return result.value
-        except Exception as e:
-            logger.error(f"Error using mammoth: {str(e)}")
-
-        # Try python-docx as fallback for .docx
-        if doc_path.lower().endswith('.docx'):
-            try:
-                doc = Document(doc_path)
-                text = '\n'.join([paragraph.text for paragraph in doc.paragraphs])
-                if text.strip():
-                    logger.info(f"Successfully extracted text using python-docx from {doc_path}")
-                    return text
-            except Exception as e:
-                logger.error(f"Error using python-docx: {str(e)}")
-
-        # Try catdoc as fallback for .doc
-        if doc_path.lower().endswith('.doc'):
-            try:
-                logger.info(f"Attempting to extract text using catdoc from {doc_path}")
-                result = subprocess.run(['/usr/bin/catdoc', doc_path], capture_output=True, text=True)
-                if result.stdout.strip():
-                    logger.info(f"Successfully extracted text using catdoc from {doc_path}")
-                    return result.stdout
-            except Exception as e:
-                logger.error(f"Error using catdoc: {str(e)}")
-
-        # Last resort: try LibreOffice
-        try:
-            logger.info(f"Attempting to extract text using LibreOffice from {doc_path}")
-            libreoffice_path = os.getenv('LIBREOFFICE_PATH', '/usr/bin/soffice')
-            with tempfile.TemporaryDirectory() as temp_dir:
-                output_file = os.path.join(temp_dir, "output.txt")
-                subprocess.run([libreoffice_path, '--headless', '--convert-to', 'txt:Text', '--outdir', temp_dir, doc_path], 
-                             capture_output=True)
-                
-                if os.path.exists(output_file):
-                    with open(output_file, 'r', encoding='utf-8') as f:
-                        text = f.read()
-                        if text.strip():
-                            logger.info(f"Successfully extracted text using LibreOffice from {doc_path}")
-                            return text
-        except Exception as e:
-            logger.error(f"Error using LibreOffice conversion: {str(e)}")
-
-        logger.error(f"All text extraction methods failed for {doc_path}")
+        logger.info(f"Attempting to extract text using Google Document AI from {doc_path}")
+        
+        # Initialize Document AI client
+        client = documentai.DocumentProcessorServiceClient()
+        name = f"projects/property-log-444101/locations/us/processors/{os.getenv('GOOGLE_DOCAI_PROCESSOR_ID')}"
+        
+        # Read the file
+        with open(doc_path, "rb") as doc_file:
+            document = {"content": doc_file.read()}
+            if doc_path.lower().endswith('.docx'):
+                document["mime_type"] = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            else:
+                document["mime_type"] = "application/msword"
+        
+        # Process the document
+        request = documentai.ProcessRequest(
+            name=name,
+            document=document
+        )
+        
+        result = client.process_document(request=request)
+        
+        if result.document.text.strip():
+            logger.info(f"Successfully extracted text using Google Document AI from {doc_path}")
+            return result.document.text
+        
+        logger.error(f"Google Document AI returned empty text for {doc_path}")
         return None
-
+            
     except Exception as e:
-        logger.error(f"Error in extract_text_from_doc: {str(e)}")
+        logger.error(f"Error in extract_text_from_doc using Google Document AI: {str(e)}")
         return None
 
 def process_document(file_path):
