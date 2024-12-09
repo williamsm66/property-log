@@ -341,7 +341,7 @@ def extract_text_from_pdf(pdf_path):
         return ""
 
 def extract_text_from_doc(doc_path):
-    """Extract text from a Word file using python-docx for .docx and textract for .doc."""
+    """Extract text from a Word file using python-docx for .docx and mammoth for .doc."""
     try:
         logger.info(f"Attempting to extract text from Word document: {doc_path}")
         
@@ -368,18 +368,22 @@ def extract_text_from_doc(doc_path):
                 logger.error(f"Error extracting text from .docx: {str(e)}")
                 return None
         else:
-            logger.info("Processing .doc file with textract")
+            logger.info("Processing .doc file with mammoth")
             try:
-                import textract
-                text = textract.process(doc_path).decode('utf-8')
+                import mammoth
+                # Convert .doc to .docx in memory
+                with open(doc_path, 'rb') as docx_file:
+                    result = mammoth.extract_raw_text(docx_file)
+                text = result.value
+                
                 if text.strip():
                     logger.info(f"Successfully extracted {len(text)} characters from .doc file")
                     return text
                 else:
-                    logger.error("Textract returned empty text")
+                    logger.error("Mammoth returned empty text")
                     return None
             except Exception as e:
-                logger.error(f"Error extracting text with textract: {str(e)}")
+                logger.error(f"Error extracting text with mammoth: {str(e)}")
                 return None
             
     except Exception as e:
