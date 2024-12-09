@@ -2,10 +2,13 @@ services:
   - type: web
     name: property-log
     env: python
+    region: singapore
+    plan: starter
     buildCommand: |
       apt-get update && apt-get install -y \
         build-essential \
         pkg-config \
+        libreoffice \
         poppler-utils \
         tesseract-ocr \
         tesseract-ocr-eng

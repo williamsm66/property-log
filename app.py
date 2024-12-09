@@ -341,56 +341,49 @@ def extract_text_from_pdf(pdf_path):
         return ""
 
 def extract_text_from_doc(doc_path):
-    """Extract text from a Word file using Google Document AI."""
+    """Extract text from a Word file using python-docx for .docx and textract for .doc."""
     try:
-        logger.info(f"Attempting to extract text using Google Document AI from {doc_path}")
+        logger.info(f"Attempting to extract text from Word document: {doc_path}")
         
-        # Initialize Document AI client
-        client = documentai.DocumentProcessorServiceClient()
-        
-        # Get the full resource name of processor
-        processor_name = client.processor_path(
-            os.getenv('GOOGLE_CLOUD_PROJECT'),
-            "us",  # Location
-            os.getenv('GOOGLE_DOCAI_PROCESSOR_ID')
-        )
-        
-        # Read the file into memory
-        with open(doc_path, "rb") as doc_file:
-            doc_content = doc_file.read()
-        
-        # Set the correct MIME type based on file extension
         if doc_path.lower().endswith('.docx'):
-            mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            logger.info("Processing .docx file with python-docx")
+            try:
+                doc = Document(doc_path)
+                full_text = []
+                for para in doc.paragraphs:
+                    if para.text.strip():
+                        full_text.append(para.text)
+                
+                # Also extract text from tables
+                for table in doc.tables:
+                    for row in table.rows:
+                        for cell in row.cells:
+                            if cell.text.strip():
+                                full_text.append(cell.text)
+                
+                text = '\n'.join(full_text)
+                logger.info(f"Successfully extracted {len(text)} characters from .docx file")
+                return text
+            except Exception as e:
+                logger.error(f"Error extracting text from .docx: {str(e)}")
+                return None
         else:
-            # For .doc files, we'll use a generic MIME type that Document AI accepts
-            mime_type = "application/octet-stream"
-            
-        logger.info(f"Using MIME type: {mime_type} for {doc_path}")
-        
-        # Configure the process request
-        request = documentai.ProcessRequest(
-            name=processor_name,
-            raw_document=documentai.RawDocument(
-                content=doc_content,
-                mime_type=mime_type
-            )
-        )
-        
-        # Process the document
-        logger.info("Sending document to Google Document AI for processing...")
-        result = client.process_document(request=request)
-        document = result.document
-        
-        if document.text.strip():
-            logger.info(f"Successfully extracted {len(document.text)} characters from document")
-            return document.text
-        
-        logger.error(f"Google Document AI returned empty text for {doc_path}")
-        return None
+            logger.info("Processing .doc file with textract")
+            try:
+                import textract
+                text = textract.process(doc_path).decode('utf-8')
+                if text.strip():
+                    logger.info(f"Successfully extracted {len(text)} characters from .doc file")
+                    return text
+                else:
+                    logger.error("Textract returned empty text")
+                    return None
+            except Exception as e:
+                logger.error(f"Error extracting text with textract: {str(e)}")
+                return None
             
     except Exception as e:
-        logger.error(f"Error in extract_text_from_doc using Google Document AI: {str(e)}")
+        logger.error(f"Error in extract_text_from_doc: {str(e)}")
         return None
 
 def process_document(file_path):
