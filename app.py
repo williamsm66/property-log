@@ -1197,31 +1197,126 @@ def analyze_legal_pack():
     try:
         if 'file' not in request.files:
             return jsonify({'error': 'No file uploaded'}), 400
-            
-        file = request.files['file']
-        if not file or not file.filename:
+
+        uploaded_file = request.files['file']
+        property_id = request.form.get('property_id')
+        
+        if not uploaded_file.filename:
             return jsonify({'error': 'No file selected'}), 400
             
-        # Save file
-        filename = secure_filename(file.filename)
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(file_path)
-        
-        # Create document record
-        document = Document(filename=filename)
-        db.session.add(document)
-        db.session.commit()
-        
-        # Start background processing
-        thread = Thread(target=process_document_async, args=(document.id,))
-        thread.daemon = True
-        thread.start()
-        
-        return jsonify({
-            'message': 'File uploaded and processing started',
-            'document_id': document.id
-        }), 202
-        
+        if not property_id:
+            return jsonify({'error': 'Property ID is required'}), 400
+
+        # Create a temporary directory for processing
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Save the uploaded file
+            temp_zip = os.path.join(temp_dir, secure_filename(uploaded_file.filename))
+            uploaded_file.save(temp_zip)
+
+            # Process the documents
+            documents_content = []
+            
+            if uploaded_file.filename.endswith('.zip'):
+                # Extract and process ZIP contents
+                app.logger.info(f"Processing ZIP file: {uploaded_file.filename}")
+                processed_files, failed_files, processing_summary = process_zip_file(temp_zip)
+                if failed_files:
+                    app.logger.warning(f"Failed to process some files: {failed_files}")
+                if processed_files:
+                    documents_content = processed_files
+                    app.logger.info(f"Successfully processed {len(processed_files)} files from ZIP")
+                else:
+                    app.logger.error("No files were successfully processed from ZIP")
+                    return jsonify({'error': 'No valid documents could be processed from the ZIP file'}), 400
+            else:
+                # Process single file
+                app.logger.info(f"Processing single file: {uploaded_file.filename}")
+                text_content = process_document(temp_zip)
+                if text_content:
+                    documents_content.append({
+                        'name': uploaded_file.filename,
+                        'content': text_content
+                    })
+                    app.logger.info("Successfully processed single file")
+                else:
+                    app.logger.error("Failed to process single file")
+                    return jsonify({'error': 'Could not extract text from the uploaded file'}), 400
+
+            if not documents_content:
+                app.logger.error("No documents were successfully processed")
+                return jsonify({'error': 'No valid documents found or no text could be extracted'}), 400
+
+            # Count total tokens and per-document tokens
+            total_tokens = 0
+            app.logger.info("Counting tokens for each document:")
+            for doc in documents_content:
+                try:
+                    doc_tokens = count_tokens(doc['content'])
+                    doc['tokens'] = doc_tokens
+                    total_tokens += doc_tokens
+                    app.logger.info(f"Document '{doc['name']}': {doc_tokens:,} tokens ({len(doc['content']):,} characters)")
+                except Exception as e:
+                    app.logger.error(f"Error counting tokens for {doc['name']}: {str(e)}")
+                    return jsonify({'error': f"Error processing document {doc['name']}: {str(e)}"}), 500
+
+            app.logger.info(f"Total tokens across all documents: {total_tokens:,}")
+            
+            # Check if total tokens is too large
+            if total_tokens > 100000:  # Adjust this limit as needed
+                app.logger.error(f"Total tokens ({total_tokens:,}) exceeds limit")
+                return jsonify({
+                    'error': 'Documents are too large to process',
+                    'suggestion': 'Please try uploading fewer or smaller documents. The total size exceeds our processing limit.'
+                }), 413
+
+            try:
+                app.logger.info("Starting Claude analysis...")
+                analysis = analyze_with_claude(documents_content)
+                app.logger.info("Claude analysis completed successfully")
+            except Exception as e:
+                app.logger.error(f"Error during Claude analysis: {str(e)}")
+                return jsonify({'error': f'Error during document analysis: {str(e)}'}), 500
+
+            # Save documents with initial analysis and property ID
+            session_id = "session_" + datetime.now().strftime('%Y%m%d_%H%M%S')
+            try:
+                save_success = save_documents(session_id, documents_content, analysis, [])
+                if not save_success:
+                    app.logger.error("Failed to save documents to database")
+                    return jsonify({'error': 'Failed to save documents'}), 500
+                app.logger.info(f"Successfully saved documents with session ID: {session_id}")
+            except Exception as e:
+                app.logger.error(f"Error saving documents: {str(e)}")
+                return jsonify({'error': f'Error saving documents: {str(e)}'}), 500
+
+            # Update the property with the session info
+            property = Property.query.get(property_id)
+            if property:
+                property.legal_pack_analysis = analysis
+                property.legal_pack_session_id = session_id
+                property.legal_pack_analyzed_at = datetime.now()
+                property.legal_pack_qa_history = '[]'  # Initialize empty QA history
+                property.legal_pack_documents = json.dumps(documents_content)  # Store documents
+                
+                # Update the document session with the property ID
+                session = DocumentSession.query.get(session_id)
+                if session:
+                    session.property_id = property_id
+                
+                db.session.commit()
+                app.logger.info(f"Saved analysis and documents to property {property_id}")
+            else:
+                app.logger.error(f"Property {property_id} not found")
+                return jsonify({'error': 'Property not found'}), 404
+
+            return jsonify({
+                'success': True,
+                'analysis': analysis,
+                'documents': documents_content,
+                'session_id': session_id,
+                'total_tokens': total_tokens
+            })
+                
     except Exception as e:
         app.logger.error(f"Error in analyze_legal_pack: {str(e)}")
         return jsonify({'error': str(e)}), 500
