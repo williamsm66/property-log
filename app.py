@@ -885,45 +885,46 @@ def process_documents(file_paths, follow_up=False):
         app.logger.info(f"Analyzing documents with Claude (follow_up: {follow_up})")
         
         # Check API key
-        api_key = os.getenv('ANTHROPIC_API_KEY')
+        api_key = os.getenv('CLAUDE_API_KEY')
         if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY environment variable not set")
+            raise ValueError("CLAUDE_API_KEY environment variable not set")
         app.logger.info(f"API Key length: {len(api_key)}")
         
         # Initialize Anthropic client
         client = anthropic.Anthropic(api_key=api_key)
         app.logger.info("Successfully initialized Anthropic client")
         
-        # If input is a list of strings (document content), wrap it
-        if isinstance(file_paths[0], str):
-            documents = [{'content': content} for content in file_paths]
-        else:
-            documents = file_paths
+        # Process documents in smaller batches
+        MAX_BATCH_SIZE = 3
+        MAX_TOKENS_PER_BATCH = 15000
+        
+        all_documents = []
+        current_batch = []
+        current_batch_tokens = 0
+        
+        for file_path in file_paths:
+            doc_content = extract_text_from_document(file_path)
+            token_count = count_tokens(doc_content)
+            app.logger.info(f"Document {os.path.basename(file_path)}: {token_count} tokens")
             
-        results = []
-        for doc in documents:
-            try:
-                # Process each document
-                app.logger.info(f"Sending analysis request to Claude")
-                message = client.messages.create(
-                    model="claude-3-opus-20240229",
-                    max_tokens=4000,
-                    temperature=0,
-                    system="You are a helpful assistant that analyzes legal documents. Provide a clear and concise analysis focusing on key points, risks, and important information.",
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": f"Please analyze this document and provide key information: {doc['content']}"
-                        }
-                    ]
-                )
-                results.append(message.content)
-                
-            except Exception as e:
-                app.logger.error(f"Error analyzing document: {str(e)}")
-                results.append(f"Error analyzing document: {str(e)}")
-                
-        return results
+            # If adding this document would exceed token limit, process current batch
+            if current_batch_tokens + token_count > MAX_TOKENS_PER_BATCH or len(current_batch) >= MAX_BATCH_SIZE:
+                # Process current batch
+                batch_results = analyze_document_batch(current_batch, client)
+                all_documents.extend(batch_results)
+                current_batch = []
+                current_batch_tokens = 0
+            
+            current_batch.append((file_path, doc_content))
+            current_batch_tokens += token_count
+        
+        # Process remaining documents
+        if current_batch:
+            batch_results = analyze_document_batch(current_batch, client)
+            all_documents.extend(batch_results)
+        
+        app.logger.info(f"Total tokens for all documents: {sum(count_tokens(doc[1]) for doc in current_batch)}")
+        return all_documents
         
     except Exception as e:
         app.logger.error(f"Error processing documents: {str(e)}")
@@ -1360,31 +1361,7 @@ def analyze_legal_pack():
 
             try:
                 app.logger.info("Starting Claude analysis...")
-                # Process documents in batches
-                all_analyses = []
-                current_batch = []
-                current_batch_tokens = 0
-                
-                for doc in documents_content:
-                    doc_tokens = doc.get('tokens', 0)
-                    
-                    # If adding this document would exceed batch limit, process current batch
-                    if current_batch_tokens + doc_tokens > 15000 or len(current_batch) >= 3:
-                        batch_analysis = process_documents([d['content'] for d in current_batch])
-                        all_analyses.extend(batch_analysis)
-                        current_batch = []
-                        current_batch_tokens = 0
-                    
-                    current_batch.append(doc)
-                    current_batch_tokens += doc_tokens
-                
-                # Process any remaining documents
-                if current_batch:
-                    batch_analysis = process_documents([d['content'] for d in current_batch])
-                    all_analyses.extend(batch_analysis)
-                
-                # Combine all analyses
-                analysis = "\n\n".join(all_analyses) if all_analyses else "No analysis generated"
+                analysis = analyze_with_claude(documents_content)
                 app.logger.info("Claude analysis completed successfully")
             except Exception as e:
                 app.logger.error(f"Error during Claude analysis: {str(e)}")
@@ -1530,28 +1507,27 @@ def ask_followup():
 @app.route('/system-check', methods=['GET'])
 def system_check():
     """Check system dependencies and configuration."""
-    import subprocess
-    import shutil
-    
-    status = {
-        'tesseract': False,
-        'libreoffice': False,
-        'environment': {
-            'ANTHROPIC_API_KEY': bool(os.getenv('ANTHROPIC_API_KEY')),
+    try:
+        # Check environment variables
+        env_vars = {
+            'CLAUDE_API_KEY': bool(os.getenv('CLAUDE_API_KEY')),
             'DATABASE_URL': bool(os.getenv('DATABASE_URL'))
         },
-        'anthropic_version': anthropic.__version__
-    }
-    
-    # Check tesseract
-    tesseract_path = shutil.which('tesseract')
-    status['tesseract'] = bool(tesseract_path)
-    
-    # Check libreoffice
-    soffice_path = shutil.which('soffice')
-    status['libreoffice'] = bool(soffice_path)
-    
-    return jsonify(status)
+        status = {
+            'tesseract': False,
+            'libreoffice': False,
+            'environment': env_vars
+        }
+        
+        # Check tesseract
+        tesseract_path = shutil.which('tesseract')
+        status['tesseract'] = bool(tesseract_path)
+        
+        # Check libreoffice
+        soffice_path = shutil.which('soffice')
+        status['libreoffice'] = bool(soffice_path)
+        
+        return jsonify(status)
 
 @app.route('/test-property-details')
 def test_property_details():
