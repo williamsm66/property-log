@@ -1066,6 +1066,8 @@ def delete_property(property_id):
 def update_property(property_id):
     try:
         data = request.get_json()
+        
+        # Update property fields
         property = Property.query.get_or_404(property_id)
         
         # Update property fields
@@ -1326,131 +1328,108 @@ def legal_pack_analyzer(property_id):
 def analyze_legal_pack():
     """Handle legal pack file upload and analysis."""
     try:
-        if 'file' not in request.files:
-            return jsonify({'error': 'No file uploaded'}), 400
-
-        uploaded_file = request.files['file']
-        property_id = request.form.get('property_id')
+        logger.info("Starting legal pack analysis...")
         
-        if not uploaded_file.filename:
-            return jsonify({'error': 'No file selected'}), 400
+        # Get property ID from form
+        property_id = request.form.get('property_id')
+        logger.info(f"Analyzing legal pack for property ID: {property_id}")
+        
+        if 'files[]' not in request.files:
+            logger.error("No files part in request")
+            return jsonify({'error': 'No files uploaded'}), 400
             
-        if not property_id:
-            return jsonify({'error': 'Property ID is required'}), 400
-
-        # Create a temporary directory for processing
+        files = request.files.getlist('files[]')
+        if not files or all(not file.filename for file in files):
+            logger.error("No selected files")
+            return jsonify({'error': 'No selected files'}), 400
+            
+        # Create temporary directory for file processing
         with tempfile.TemporaryDirectory() as temp_dir:
-            # Save the uploaded file
-            temp_zip = os.path.join(temp_dir, secure_filename(uploaded_file.filename))
-            uploaded_file.save(temp_zip)
-
-            # Process the documents
-            documents_content = []
+            logger.info(f"Created temporary directory: {temp_dir}")
+            processed_files = []
+            total_chars = 0
             
-            if uploaded_file.filename.endswith('.zip'):
-                # Extract and process ZIP contents
-                app.logger.info(f"Processing ZIP file: {uploaded_file.filename}")
-                processed_files, failed_files, processing_summary = process_zip_file(temp_zip)
-                if failed_files:
-                    app.logger.warning(f"Failed to process some files: {failed_files}")
-                if processed_files:
-                    documents_content = processed_files
-                    app.logger.info(f"Successfully processed {len(processed_files)} files from ZIP")
-                else:
-                    app.logger.error("No files were successfully processed from ZIP")
-                    return jsonify({'error': 'No valid documents could be processed from the ZIP file'}), 400
-            else:
-                # Process single file
-                app.logger.info(f"Processing single file: {uploaded_file.filename}")
-                text_content = process_document(temp_zip)
-                if text_content:
-                    documents_content.append({
-                        'name': uploaded_file.filename,
-                        'content': text_content
-                    })
-                    app.logger.info("Successfully processed single file")
-                else:
-                    app.logger.error("Failed to process single file")
-                    return jsonify({'error': 'Could not extract text from the uploaded file'}), 400
-
-            if not documents_content:
-                app.logger.error("No documents were successfully processed")
-                return jsonify({'error': 'No valid documents found or no text could be extracted'}), 400
-
-            # Count total tokens and per-document tokens
-            total_tokens = 0
-            app.logger.info("Counting tokens for each document:")
-            for doc in documents_content:
+            try:
+                # Process each uploaded file
+                for file in files:
+                    if file and file.filename:
+                        logger.info(f"Processing file: {file.filename}")
+                        
+                        # Save file to temp directory
+                        file_path = os.path.join(temp_dir, secure_filename(file.filename))
+                        file.save(file_path)
+                        logger.info(f"Saved file to: {file_path}")
+                        
+                        # Process file based on type
+                        if file.filename.lower().endswith('.zip'):
+                            logger.info("Processing ZIP file...")
+                            extracted_files = process_zip_file(file_path)
+                            processed_files.extend(extracted_files)
+                            logger.info(f"Processed {len(extracted_files)} files from ZIP")
+                        else:
+                            try:
+                                text_content = extract_text_from_document(file_path)
+                                char_count = len(text_content)
+                                total_chars += char_count
+                                logger.info(f"Document '{file.filename}': {char_count} characters")
+                                processed_files.append(file_path)
+                            except Exception as e:
+                                logger.error(f"Error processing file {file.filename}: {str(e)}")
+                                return jsonify({'error': f"Error processing {file.filename}: {str(e)}"}), 500
+                
+                logger.info(f"Total characters across all documents: {total_chars}")
+                
+                # Start Claude analysis
+                logger.info("Starting Claude analysis...")
                 try:
-                    doc_tokens = count_tokens(doc['content'])
-                    doc['tokens'] = doc_tokens
-                    total_tokens += doc_tokens
-                    app.logger.info(f"Document '{doc['name']}': {doc_tokens:,} tokens ({len(doc['content']):,} characters)")
+                    # Generate a unique session ID
+                    session_id = str(uuid.uuid4())
+                    logger.info(f"Created session ID: {session_id}")
+                    
+                    # Process documents and get analysis
+                    documents = process_documents(processed_files)
+                    logger.info("Documents processed successfully")
+                    
+                    # Save to database
+                    save_documents(session_id, processed_files)
+                    logger.info("Documents saved to database")
+                    
+                    # Update property with legal pack info
+                    with app.app_context():
+                        property = Property.query.get(property_id)
+                        if property:
+                            property.legal_pack_analyzed_at = datetime.utcnow()
+                            property.legal_pack_session_id = session_id
+                            db.session.commit()
+                            logger.info(f"Updated property {property_id} with analysis timestamp")
+                    
+                    return jsonify({
+                        'success': True,
+                        'session_id': session_id,
+                        'message': 'Analysis complete'
+                    })
+                    
                 except Exception as e:
-                    app.logger.error(f"Error counting tokens for {doc['name']}: {str(e)}")
-                    return jsonify({'error': f"Error processing document {doc['name']}: {str(e)}"}), 500
-
-            app.logger.info(f"Total tokens across all documents: {total_tokens:,}")
-            
-            # Check if total tokens is too large
-            if total_tokens > 100000:  # Adjust this limit as needed
-                app.logger.error(f"Total tokens ({total_tokens:,}) exceeds limit")
-                return jsonify({
-                    'error': 'Documents are too large to process',
-                    'suggestion': 'Please try uploading fewer or smaller documents. The total size exceeds our processing limit.'
-                }), 413
-
-            try:
-                app.logger.info("Starting Claude analysis...")
-                analysis = analyze_with_claude(documents_content)
-                app.logger.info("Claude analysis completed successfully")
+                    logger.error(f"Error during Claude analysis: {str(e)}")
+                    return jsonify({'error': f'Error during analysis: {str(e)}'}), 500
+                    
             except Exception as e:
-                app.logger.error(f"Error during Claude analysis: {str(e)}")
-                return jsonify({'error': f'Error during document analysis: {str(e)}'}), 500
-
-            # Save documents with initial analysis and property ID
-            session_id = "session_" + datetime.now().strftime('%Y%m%d_%H%M%S')
-            try:
-                save_success = save_documents(session_id, documents_content, analysis, [])
-                if not save_success:
-                    app.logger.error("Failed to save documents to database")
-                    return jsonify({'error': 'Failed to save documents'}), 500
-                app.logger.info(f"Successfully saved documents with session ID: {session_id}")
-            except Exception as e:
-                app.logger.error(f"Error saving documents: {str(e)}")
-                return jsonify({'error': f'Error saving documents: {str(e)}'}), 500
-
-            # Update the property with the session info
-            property = Property.query.get(property_id)
-            if property:
-                property.legal_pack_analysis = analysis
-                property.legal_pack_session_id = session_id
-                property.legal_pack_analyzed_at = datetime.now()
-                property.legal_pack_qa_history = '[]'  # Initialize empty QA history
-                property.legal_pack_documents = json.dumps(documents_content)  # Store documents
+                logger.error(f"Error processing files: {str(e)}")
+                return jsonify({'error': f'Error processing files: {str(e)}'}), 500
                 
-                # Update the document session with the property ID
-                session = DocumentSession.query.get(session_id)
-                if session:
-                    session.property_id = property_id
-                
-                db.session.commit()
-                app.logger.info(f"Saved analysis and documents to property {property_id}")
-            else:
-                app.logger.error(f"Property {property_id} not found")
-                return jsonify({'error': 'Property not found'}), 404
-
-            return jsonify({
-                'success': True,
-                'analysis': analysis,
-                'documents': documents_content,
-                'session_id': session_id,
-                'total_tokens': total_tokens
-            })
+            finally:
+                # Clean up any remaining files
+                logger.info("Cleaning up temporary files...")
+                for file_path in processed_files:
+                    try:
+                        if os.path.exists(file_path):
+                            os.remove(file_path)
+                    except Exception as e:
+                        logger.error(f"Error cleaning up file {file_path}: {str(e)}")
                 
     except Exception as e:
-        app.logger.error(f"Error in analyze_legal_pack: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Unexpected error in analyze_legal_pack: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/property/ask_followup', methods=['POST'])
 def ask_followup():
@@ -1621,6 +1600,27 @@ def document_status(doc_id):
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+def log_memory_usage(context=""):
+    """Log current memory usage."""
+    try:
+        import psutil
+        process = psutil.Process()
+        memory_info = process.memory_info()
+        logger.info(f"Memory usage ({context}): {memory_info.rss / 1024 / 1024:.2f} MB")
+    except ImportError:
+        logger.warning("psutil not installed - cannot monitor memory usage")
+
+@app.before_request
+def before_request():
+    """Log memory usage before each request."""
+    log_memory_usage(f"Before request: {request.path}")
+
+@app.after_request
+def after_request(response):
+    """Log memory usage after each request."""
+    log_memory_usage(f"After request: {request.path}")
+    return response
 
 if __name__ == '__main__':
     with app.app_context():
