@@ -235,82 +235,71 @@
         }
 
         function displayTokenUsage(tokenUsage) {
-            console.log('Token usage data:', tokenUsage); // Debug log
+            console.log('Token usage data:', tokenUsage);
             
-            const tokenDetailsDiv = document.getElementById('token-details');
-            const processingSection = document.getElementById('processing-summary');
-            if (!tokenDetailsDiv || !processingSection) {
-                console.error('Required elements not found:', {
-                    tokenDetailsDiv: !!tokenDetailsDiv,
-                    processingSection: !!processingSection
-                });
+            const tokenUsageInfo = document.getElementById('tokenUsageInfo');
+            const tokenUsageContent = document.getElementById('tokenUsageContent');
+            
+            if (!tokenUsageInfo || !tokenUsageContent) {
+                console.error('Token usage elements not found');
                 return;
             }
 
-            let tokenHtml = '';
+            let content = '';
             
             // Display per-document token counts
-            if (tokenUsage.documents && tokenUsage.documents.length > 0) {
-                tokenHtml += '<div class="mb-4">';
-                tokenHtml += '<h6 class="font-semibold mb-2 text-blue-800">Per Document Token Usage:</h6>';
-                tokenHtml += '<ul class="list-disc pl-5 space-y-2">';
+            if (tokenUsage.documents && Array.isArray(tokenUsage.documents)) {
+                content += 'Per Document Token Usage:\n';
                 tokenUsage.documents.forEach(doc => {
-                    tokenHtml += `<li class="text-gray-700"><span class="font-medium">${escapeHtml(doc.name)}:</span> ${doc.tokens.toLocaleString()} tokens</li>`;
+                    if (doc && doc.name && doc.tokens) {
+                        content += `${doc.name}: ${doc.tokens.toLocaleString()} tokens\n`;
+                    }
                 });
-                tokenHtml += '</ul></div>';
+                content += '\n';
             }
 
             // Display total token usage
             if (tokenUsage.total_tokens) {
-                tokenHtml += '<div class="mt-4 pt-4 border-t border-blue-200">';
-                tokenHtml += '<h6 class="font-semibold mb-2 text-blue-800">Total Token Usage:</h6>';
-                tokenHtml += `<p class="text-gray-700 font-medium">${tokenUsage.total_tokens.toLocaleString()} tokens</p>`;
-                tokenHtml += '</div>';
+                content += `Total Tokens Used: ${tokenUsage.total_tokens.toLocaleString()}`;
             }
 
-            console.log('Generated token HTML:', tokenHtml); // Debug log
-            tokenDetailsDiv.innerHTML = tokenHtml;
-            processingSection.classList.remove('hidden');
+            tokenUsageContent.textContent = content;
+            tokenUsageInfo.classList.remove('hidden');
         }
 
         function displayProcessingSummary(summary) {
-            console.log('Processing summary data:', summary); // Debug log
+            console.log('Processing summary:', summary);
             
-            const statusList = document.getElementById('file-status-list');
-            const processingSection = document.getElementById('processing-summary');
-            if (!statusList || !processingSection) {
-                console.error('Required elements not found:', {
-                    statusList: !!statusList,
-                    processingSection: !!processingSection
-                });
+            const resultsDiv = document.getElementById('results');
+            if (!resultsDiv) {
+                console.error('Results div not found');
                 return;
             }
 
-            let html = '';
-            
-            // Parse the summary string if needed
-            const lines = typeof summary === 'string' ? summary.split('\n') : [];
-            const successfulFiles = lines.filter(line => line.startsWith('Successfully processed')).map(line => {
-                const match = line.match(/Successfully processed (.*?) \((\d+) tokens\)/);
-                return match ? { name: match[1], tokens: parseInt(match[2]) } : null;
-            }).filter(Boolean);
-            
-            console.log('Parsed successful files:', successfulFiles); // Debug log
-            
-            // Display successful files
-            if (successfulFiles.length > 0) {
-                html += '<div class="mb-4">';
-                html += '<h6 class="font-semibold text-green-700 mb-2">Successfully Processed Files:</h6>';
-                html += '<ul class="list-disc pl-5 space-y-1">';
-                successfulFiles.forEach(file => {
-                    html += `<li class="text-gray-700">${escapeHtml(file.name)} (${file.tokens.toLocaleString()} tokens)</li>`;
-                });
-                html += '</ul></div>';
+            // Create a new section for processing summary if it doesn't exist
+            let summarySection = document.getElementById('processing-summary-section');
+            if (!summarySection) {
+                summarySection = document.createElement('div');
+                summarySection.id = 'processing-summary-section';
+                summarySection.className = 'mt-4 p-4 bg-gray-50 rounded-lg';
+                resultsDiv.appendChild(summarySection);
             }
 
-            console.log('Generated summary HTML:', html); // Debug log
-            statusList.innerHTML = html;
-            processingSection.classList.remove('hidden');
+            let html = '<h4 class="text-lg font-semibold mb-2">Processing Summary</h4>';
+            
+            // Handle string or array input
+            const lines = Array.isArray(summary) ? summary : summary.split('\n');
+            
+            html += '<ul class="list-disc pl-5 space-y-1">';
+            lines.forEach(line => {
+                if (line.trim()) {
+                    html += `<li class="text-gray-700">${escapeHtml(line.trim())}</li>`;
+                }
+            });
+            html += '</ul>';
+
+            summarySection.innerHTML = html;
+            summarySection.classList.remove('hidden');
         }
 
         async function analyzeLegalPack(e) {
