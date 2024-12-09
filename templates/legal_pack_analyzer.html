@@ -237,55 +237,48 @@
         function displayTokenUsage(tokenUsage) {
             console.log('Token usage data:', tokenUsage);
             
-            const tokenUsageInfo = document.getElementById('tokenUsageInfo');
-            const tokenUsageContent = document.getElementById('tokenUsageContent');
-            
-            if (!tokenUsageInfo || !tokenUsageContent) {
-                console.error('Token usage elements not found');
+            const tokenDetails = document.getElementById('token-details');
+            if (!tokenDetails) {
+                console.error('Token details element not found');
                 return;
             }
 
-            let content = '';
+            let html = '';
             
             // Display per-document token counts
             if (tokenUsage.documents && Array.isArray(tokenUsage.documents)) {
-                content += 'Per Document Token Usage:\n';
+                html += '<div class="mb-4">';
+                html += '<h5 class="font-medium text-gray-700 mb-2">Per Document Token Usage:</h5>';
+                html += '<ul class="list-disc pl-5 space-y-1">';
                 tokenUsage.documents.forEach(doc => {
                     if (doc && doc.name && doc.tokens) {
-                        content += `${doc.name}: ${doc.tokens.toLocaleString()} tokens\n`;
+                        html += `<li class="text-gray-600">${escapeHtml(doc.name)}: ${doc.tokens.toLocaleString()} tokens</li>`;
                     }
                 });
-                content += '\n';
+                html += '</ul></div>';
             }
 
             // Display total token usage
             if (tokenUsage.total_tokens) {
-                content += `Total Tokens Used: ${tokenUsage.total_tokens.toLocaleString()}`;
+                html += '<div class="mt-4 pt-4 border-t border-blue-200">';
+                html += '<h5 class="font-medium text-gray-700 mb-2">Total Token Usage:</h5>';
+                html += `<p class="text-gray-600">${tokenUsage.total_tokens.toLocaleString()} tokens</p>`;
+                html += '</div>';
             }
 
-            tokenUsageContent.textContent = content;
-            tokenUsageInfo.classList.remove('hidden');
+            tokenDetails.innerHTML = html;
         }
 
         function displayProcessingSummary(summary) {
             console.log('Processing summary:', summary);
             
-            const resultsDiv = document.getElementById('results');
-            if (!resultsDiv) {
-                console.error('Results div not found');
+            const statusList = document.getElementById('file-status-list');
+            if (!statusList) {
+                console.error('Status list element not found');
                 return;
             }
 
-            // Create a new section for processing summary if it doesn't exist
-            let summarySection = document.getElementById('processing-summary-section');
-            if (!summarySection) {
-                summarySection = document.createElement('div');
-                summarySection.id = 'processing-summary-section';
-                summarySection.className = 'mt-4 p-4 bg-gray-50 rounded-lg';
-                resultsDiv.appendChild(summarySection);
-            }
-
-            let html = '<h4 class="text-lg font-semibold mb-2">Processing Summary</h4>';
+            let html = '';
             
             // Handle string or array input
             const lines = Array.isArray(summary) ? summary : summary.split('\n');
@@ -293,13 +286,12 @@
             html += '<ul class="list-disc pl-5 space-y-1">';
             lines.forEach(line => {
                 if (line.trim()) {
-                    html += `<li class="text-gray-700">${escapeHtml(line.trim())}</li>`;
+                    html += `<li class="text-gray-600">${escapeHtml(line.trim())}</li>`;
                 }
             });
             html += '</ul>';
 
-            summarySection.innerHTML = html;
-            summarySection.classList.remove('hidden');
+            statusList.innerHTML = html;
         }
 
         async function analyzeLegalPack(e) {
@@ -354,14 +346,15 @@
                                 </div>
                             </div>
                             
-                            <div id="processing-summary" class="bg-white rounded-lg p-6 border border-gray-200">
-                                <h4 class="text-xl font-semibold mb-4">Document Processing Details</h4>
-                                <div class="space-y-4">
-                                    <div id="file-status-list" class="space-y-3 bg-gray-50 p-4 rounded-lg"></div>
-                                    <div id="token-usage" class="mt-4 p-4 bg-blue-50 rounded-lg">
-                                        <h5 class="text-lg font-semibold mb-2">Token Usage Information</h5>
-                                        <div id="token-details" class="space-y-2 text-sm text-gray-700"></div>
-                                    </div>
+                            <div id="processing-details" class="mt-6">
+                                <div id="processing-summary" class="bg-gray-50 rounded-lg p-6 mb-4">
+                                    <h4 class="text-lg font-semibold mb-4">Processing Summary</h4>
+                                    <div id="file-status-list"></div>
+                                </div>
+                                
+                                <div id="token-usage" class="bg-blue-50 rounded-lg p-6">
+                                    <h4 class="text-lg font-semibold mb-4">Token Usage Information</h4>
+                                    <div id="token-details" class="space-y-2"></div>
                                 </div>
                             </div>
                         </div>
@@ -374,12 +367,10 @@
 
                     // Now display the summaries
                     if (data.processing_summary) {
-                        console.log('Calling displayProcessingSummary');
                         displayProcessingSummary(data.processing_summary);
                     }
                     
                     if (data.token_usage) {
-                        console.log('Calling displayTokenUsage');
                         displayTokenUsage(data.token_usage);
                     }
 
