@@ -879,6 +879,93 @@ def process_document_async(doc_id):
     finally:
         gc.collect()
 
+def process_documents(file_paths, follow_up=False):
+    """Process multiple documents and analyze them."""
+    try:
+        app.logger.info(f"Analyzing documents with Claude (follow_up: {follow_up})")
+        
+        # Check API key
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY environment variable not set")
+        app.logger.info(f"API Key length: {len(api_key)}")
+        
+        # Initialize Anthropic client
+        client = anthropic.Anthropic(api_key=api_key)
+        app.logger.info("Successfully initialized Anthropic client")
+        
+        # Process documents in smaller batches
+        MAX_BATCH_SIZE = 3
+        MAX_TOKENS_PER_BATCH = 15000
+        
+        all_documents = []
+        current_batch = []
+        current_batch_tokens = 0
+        
+        for file_path in file_paths:
+            doc_content = extract_text_from_document(file_path)
+            token_count = count_tokens(doc_content)
+            app.logger.info(f"Document {os.path.basename(file_path)}: {token_count} tokens")
+            
+            # If adding this document would exceed token limit, process current batch
+            if current_batch_tokens + token_count > MAX_TOKENS_PER_BATCH or len(current_batch) >= MAX_BATCH_SIZE:
+                # Process current batch
+                batch_results = analyze_document_batch(current_batch, client)
+                all_documents.extend(batch_results)
+                current_batch = []
+                current_batch_tokens = 0
+            
+            current_batch.append((file_path, doc_content))
+            current_batch_tokens += token_count
+        
+        # Process remaining documents
+        if current_batch:
+            batch_results = analyze_document_batch(current_batch, client)
+            all_documents.extend(batch_results)
+        
+        app.logger.info(f"Total tokens for all documents: {sum(count_tokens(doc[1]) for doc in current_batch)}")
+        return all_documents
+        
+    except Exception as e:
+        app.logger.error(f"Error processing documents: {str(e)}")
+        raise
+
+def analyze_document_batch(document_batch, client):
+    """Analyze a batch of documents."""
+    results = []
+    for file_path, content in document_batch:
+        try:
+            # Process each document in the batch
+            app.logger.info(f"Sending analysis request to Claude for {os.path.basename(file_path)}")
+            
+            # Your existing analysis logic here
+            message = client.messages.create(
+                model="claude-3-opus-20240229",
+                max_tokens=4000,
+                temperature=0,
+                system="You are a helpful assistant that analyzes legal documents.",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": f"Please analyze this document and provide key information: {content}"
+                    }
+                ]
+            )
+            
+            results.append({
+                'file_path': file_path,
+                'analysis': message.content
+            })
+            
+        except Exception as e:
+            app.logger.error(f"Error analyzing document {os.path.basename(file_path)}: {str(e)}")
+            results.append({
+                'file_path': file_path,
+                'error': str(e)
+            })
+    
+    return results
+
 @app.route('/')
 def home():
     """Render home page and serve as health check endpoint."""

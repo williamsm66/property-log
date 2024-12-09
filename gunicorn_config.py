@@ -6,10 +6,10 @@ bind = f"0.0.0.0:{os.environ.get('PORT', '10000')}"
 backlog = 2048
 
 # Worker processes
-workers = 2  # Rule of thumb: 2-4 x $(NUM_CORES)
+workers = 1  # Reducing to 1 worker to maximize memory per worker
 worker_class = 'sync'
 worker_connections = 1000
-timeout = 300  # 5 minutes
+timeout = 600  # Increasing timeout to 10 minutes
 keepalive = 2
 
 # Process naming
@@ -33,8 +33,8 @@ keyfile = None
 certfile = None
 
 # Memory management
-max_requests = 1000  # Restart workers after this many requests
-max_requests_jitter = 50  # Add randomness to max_requests
+max_requests = 1000  # Add max requests to recycle workers
+max_requests_jitter = 50  # Add jitter to prevent all workers from restarting at once
 worker_tmp_dir = "/dev/shm"  # Use RAM for temp files
 worker_exit_on_memory = 512  # MB - restart worker if memory exceeds this
 worker_abort_on_memory = 1024  # MB - kill worker if memory exceeds this
