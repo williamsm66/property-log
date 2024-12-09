@@ -1097,8 +1097,13 @@ def analyze_legal_pack():
             return jsonify({'error': 'No file uploaded'}), 400
 
         uploaded_file = request.files['file']
+        property_id = request.form.get('property_id')
+        
         if not uploaded_file.filename:
             return jsonify({'error': 'No file selected'}), 400
+            
+        if not property_id:
+            return jsonify({'error': 'Property ID is required'}), 400
 
         # Create a temporary directory for processing
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1128,11 +1133,15 @@ def analyze_legal_pack():
 
             # Save processing results
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            results_file = os.path.join('document_storage', f'processing_results_{timestamp}.json')
+            session_id = f"session_{timestamp}"
+            results_file = os.path.join('document_storage', f'processing_results_{session_id}.json')
             os.makedirs('document_storage', exist_ok=True)
             
             with open(results_file, 'w') as f:
-                json.dump(documents_content, f)
+                json.dump({
+                    'documents': documents_content,
+                    'session_id': session_id
+                }, f)
             
             app.logger.info(f"Processing results saved to {results_file}")
 
@@ -1144,10 +1153,25 @@ def analyze_legal_pack():
             try:
                 # Get analysis from Claude
                 analysis = analyze_with_claude(documents_content)
+                
+                # Save analysis to property in database
+                property = Property.query.get(property_id)
+                if property:
+                    property.legal_pack_analysis = analysis
+                    property.legal_pack_session_id = session_id
+                    property.legal_pack_analyzed_at = datetime.now()
+                    property.legal_pack_qa_history = '[]'  # Initialize empty QA history
+                    db.session.commit()
+                    app.logger.info(f"Saved analysis to property {property_id}")
+                else:
+                    app.logger.error(f"Property {property_id} not found")
+                    return jsonify({'error': 'Property not found'}), 404
+
                 return jsonify({
                     'success': True,
                     'analysis': analysis,
-                    'documents': documents_content
+                    'documents': documents_content,
+                    'session_id': session_id
                 })
             except Exception as e:
                 app.logger.error(f"Error in analyze_legal_pack: {str(e)}")

@@ -228,6 +228,12 @@
             document.getElementById('errorText').textContent = '';
         }
         
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
         function displayTokenUsage(tokenUsage) {
             console.log('Token usage data:', tokenUsage); // Debug log
             
@@ -303,10 +309,29 @@
                 html += '</ul></div>';
             }
 
+            // Display failed files if any
+            const failedFiles = lines.filter(line => line.startsWith('Failed to extract') || line.startsWith('Error processing'));
+            if (failedFiles.length > 0) {
+                html += '<div class="mt-4">';
+                html += '<h6 class="font-semibold text-red-700 mb-2">Failed Files:</h6>';
+                html += '<ul class="list-disc pl-5 space-y-1">';
+                failedFiles.forEach(line => {
+                    html += `<li class="text-gray-700">${escapeHtml(line)}</li>`;
+                });
+                html += '</ul></div>';
+            }
+
             console.log('Generated summary HTML:', html); // Debug log
             statusList.innerHTML = html;
             processingSection.classList.remove('hidden');
             console.log('Processing section visibility:', processingSection.classList.contains('hidden')); // Debug log
+        }
+
+        function formatAnswer(text) {
+            return text
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/\n/g, '<br>');
         }
 
         async function analyzeLegalPack(e) {
@@ -352,8 +377,6 @@
                     // Update the analysis section without full page reload
                     const analysisSection = document.querySelector('.prose.max-w-none');
                     if (analysisSection) {
-                        analysisSection.innerHTML = data.analysis;
-
                         // Create container for analysis results and summaries
                         const resultsContainer = document.createElement('div');
                         resultsContainer.className = 'space-y-6 mt-8';
@@ -436,9 +459,14 @@
                             displayTokenUsage(data.token_usage);
                         }
                     }
+                    
+                    // Refresh the page after a short delay to show the saved analysis
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 2000);
                 }
             } catch (error) {
-                console.error('Error:', error); // Debug log
+                console.error('Error:', error);
                 displayErrorMessage('Error analyzing legal pack: ' + error.message);
             } finally {
                 hideLoadingSpinner();
@@ -524,19 +552,6 @@
             } finally {
                 hideFollowUpLoading();
             }
-        }
-        
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-        
-        function formatAnswer(text) {
-            return text
-                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                .replace(/\*(.*?)\*/g, '<em>$1</em>')
-                .replace(/\n/g, '<br>');
         }
         
         document.getElementById('uploadForm').addEventListener('submit', analyzeLegalPack);
