@@ -234,66 +234,6 @@
             return div.innerHTML;
         }
 
-        function displayTokenUsage(tokenUsage) {
-            console.log('Token usage data:', tokenUsage);
-            
-            const tokenDetails = document.getElementById('token-details');
-            if (!tokenDetails) {
-                console.error('Token details element not found');
-                return;
-            }
-
-            let html = '';
-            
-            // Display per-document token counts
-            if (tokenUsage.documents && Array.isArray(tokenUsage.documents)) {
-                html += '<div class="mb-4">';
-                html += '<h5 class="font-medium text-gray-700 mb-2">Per Document Token Usage:</h5>';
-                html += '<ul class="list-disc pl-5 space-y-1">';
-                tokenUsage.documents.forEach(doc => {
-                    if (doc && doc.name && doc.tokens) {
-                        html += `<li class="text-gray-600">${escapeHtml(doc.name)}: ${doc.tokens.toLocaleString()} tokens</li>`;
-                    }
-                });
-                html += '</ul></div>';
-            }
-
-            // Display total token usage
-            if (tokenUsage.total_tokens) {
-                html += '<div class="mt-4 pt-4 border-t border-blue-200">';
-                html += '<h5 class="font-medium text-gray-700 mb-2">Total Token Usage:</h5>';
-                html += `<p class="text-gray-600">${tokenUsage.total_tokens.toLocaleString()} tokens</p>`;
-                html += '</div>';
-            }
-
-            tokenDetails.innerHTML = html;
-        }
-
-        function displayProcessingSummary(summary) {
-            console.log('Processing summary:', summary);
-            
-            const statusList = document.getElementById('file-status-list');
-            if (!statusList) {
-                console.error('Status list element not found');
-                return;
-            }
-
-            let html = '';
-            
-            // Handle string or array input
-            const lines = Array.isArray(summary) ? summary : summary.split('\n');
-            
-            html += '<ul class="list-disc pl-5 space-y-1">';
-            lines.forEach(line => {
-                if (line.trim()) {
-                    html += `<li class="text-gray-600">${escapeHtml(line.trim())}</li>`;
-                }
-            });
-            html += '</ul>';
-
-            statusList.innerHTML = html;
-        }
-
         async function analyzeLegalPack(e) {
             e.preventDefault();
             const fileInput = document.getElementById('file');
@@ -318,13 +258,10 @@
                 });
                 
                 const data = await response.json();
-                console.log('Response data:', data); // Debug log
-                
+                console.log('Response data:', data);
+
                 if (data.error) {
                     displayErrorMessage(data.error, data.suggestion);
-                    if (data.processing_summary) {
-                        displayProcessingSummary(data.processing_summary);
-                    }
                 } else {
                     currentSessionId = data.session_id;
                     
@@ -336,25 +273,44 @@
                     
                     // Create a new container for the analysis results
                     const container = document.createElement('div');
-                    container.className = 'mt-8 bg-white rounded-lg shadow-md p-6';
+                    container.className = 'mt-8 space-y-6';
                     container.innerHTML = `
-                        <div class="space-y-6">
-                            <div>
-                                <h3 class="text-xl font-bold mb-4">Analysis Results</h3>
-                                <div class="prose max-w-none text-gray-700 whitespace-pre-wrap break-words">
-                                    ${data.analysis}
-                                </div>
+                        <div class="bg-white rounded-lg shadow-md p-6">
+                            <h3 class="text-xl font-bold mb-4">Analysis Results</h3>
+                            <div class="prose max-w-none text-gray-700 whitespace-pre-wrap break-words">
+                                ${data.analysis}
+                            </div>
+                        </div>
+                        
+                        <div class="bg-white rounded-lg shadow-md p-6">
+                            <h3 class="text-xl font-bold mb-4">Document Processing Details</h3>
+                            
+                            <div class="mb-8">
+                                <h4 class="text-lg font-medium text-green-700 mb-4">Successfully Processed Files:</h4>
+                                <ul class="list-disc pl-5 space-y-2">
+                                    ${data.documents.map(doc => 
+                                        `<li class="text-gray-700">${escapeHtml(doc.name)} (${Math.ceil(doc.content.length / 4)} tokens)</li>`
+                                    ).join('')}
+                                </ul>
                             </div>
                             
-                            <div id="processing-details" class="mt-6">
-                                <div id="processing-summary" class="bg-gray-50 rounded-lg p-6 mb-4">
-                                    <h4 class="text-lg font-semibold mb-4">Processing Summary</h4>
-                                    <div id="file-status-list"></div>
+                            <div class="bg-blue-50 rounded-lg p-6">
+                                <h4 class="text-lg font-bold mb-4">Token Usage Information</h4>
+                                
+                                <div class="mb-4">
+                                    <h5 class="text-md font-medium text-blue-700 mb-2">Per Document Token Usage:</h5>
+                                    <ul class="list-none space-y-2">
+                                        ${data.documents.map(doc => 
+                                            `<li class="text-gray-700">${escapeHtml(doc.name)}: ${Math.ceil(doc.content.length / 4)} tokens</li>`
+                                        ).join('')}
+                                    </ul>
                                 </div>
                                 
-                                <div id="token-usage" class="bg-blue-50 rounded-lg p-6">
-                                    <h4 class="text-lg font-semibold mb-4">Token Usage Information</h4>
-                                    <div id="token-details" class="space-y-2"></div>
+                                <div class="pt-4 border-t border-blue-200">
+                                    <h5 class="text-md font-medium text-blue-700 mb-2">Total Token Usage:</h5>
+                                    <p class="text-gray-700">${data.documents.reduce((sum, doc) => 
+                                        sum + Math.ceil(doc.content.length / 4), 0
+                                    ).toLocaleString()} tokens</p>
                                 </div>
                             </div>
                         </div>
@@ -362,17 +318,8 @@
                     
                     // Find the results section and replace its contents
                     const resultsSection = document.getElementById('results');
-                    resultsSection.innerHTML = ''; // Clear existing content
+                    resultsSection.innerHTML = '';
                     resultsSection.appendChild(container);
-
-                    // Now display the summaries
-                    if (data.processing_summary) {
-                        displayProcessingSummary(data.processing_summary);
-                    }
-                    
-                    if (data.token_usage) {
-                        displayTokenUsage(data.token_usage);
-                    }
 
                     // Hide the loading spinner and clear the file input
                     hideLoadingSpinner();
