@@ -363,7 +363,8 @@ def extract_text_from_doc(doc_path):
         if doc_path.lower().endswith('.docx'):
             mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         else:
-            mime_type = "application/msword"
+            # For .doc files, we'll use a generic MIME type that Document AI accepts
+            mime_type = "application/octet-stream"
             
         logger.info(f"Using MIME type: {mime_type} for {doc_path}")
         
@@ -540,15 +541,23 @@ def load_documents(session_id):
 
 def analyze_with_claude(documents_content, processing_summary=None, follow_up_question=None, initial_analysis=None, qa_history=None):
     """Analyze all documents together using Claude API."""
+    token_summary = None
     try:
-        # Initialize Anthropic client
-        api_key = os.getenv('ANTHROPIC_API_KEY')
+        # Initialize the Anthropic client with the API key from environment variables
+        api_key = os.getenv('CLAUDE_API_KEY')
         if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY environment variable is not set")
-            
-        logger.info("Initializing Anthropic client...")
-        client = anthropic.Anthropic(api_key=api_key)
-        logger.info("Successfully initialized Anthropic client")
+            logger.error("CLAUDE_API_KEY environment variable is not set")
+            raise ValueError("CLAUDE_API_KEY environment variable is not set")
+        
+        logger.info(f"Analyzing documents with Claude (follow_up: {'yes' if follow_up_question else 'no'})")
+        logger.info(f"API Key length: {len(api_key)}")  # Log key length for verification
+        
+        try:
+            client = anthropic.Anthropic(api_key=api_key)
+            logger.info("Successfully initialized Anthropic client")
+        except Exception as client_error:
+            logger.error(f"Failed to initialize Anthropic client: {str(client_error)}")
+            raise ValueError(f"Failed to initialize Anthropic client: {str(client_error)}")
         
         # Prepare the prompt and track tokens
         total_tokens = 0
