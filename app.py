@@ -1368,7 +1368,7 @@ def analyze_legal_pack():
                             logger.info(f"Processed {len(extracted_files)} files from ZIP")
                         else:
                             try:
-                                text_content = extract_text_from_document(file_path)
+                                text_content = process_document(file_path)
                                 char_count = len(text_content)
                                 total_chars += char_count
                                 logger.info(f"Document '{file.filename}': {char_count} characters")
