@@ -127,6 +127,16 @@ if not os.path.exists(db_path):
 # Initialize database
 db = SQLAlchemy(app)
 
+# Add new model for document sessions
+class DocumentSession(db.Model):
+    __tablename__ = 'document_sessions'
+    id = db.Column(db.String(100), primary_key=True)
+    documents = db.Column(db.JSON)
+    initial_analysis = db.Column(db.Text)
+    qa_history = db.Column(db.JSON)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    property_id = db.Column(db.Integer, db.ForeignKey('property.id'))
+
 def count_tokens(text):
     """Count tokens in text using tiktoken."""
     try:
@@ -183,6 +193,7 @@ class Property(db.Model):
     # Legal pack fields
     legal_pack_analysis = db.Column(db.Text, nullable=True)
     legal_pack_qa_history = db.Column(db.Text, nullable=True)  # Store Q&A history as JSON
+    legal_pack_documents = db.Column(db.Text, nullable=True)  # Store documents content as JSON
     legal_pack_summary_pdf = db.Column(db.String(500), nullable=True)  # Path to the PDF summary
     legal_pack_analyzed_at = db.Column(db.DateTime, nullable=True)
     legal_pack_session_id = db.Column(db.String(100), nullable=True)  # To link with legal doc analyzer session
@@ -249,6 +260,7 @@ class Property(db.Model):
             'total_yield': self.total_yield,
             'legal_pack_analysis': self.legal_pack_analysis,
             'legal_pack_qa_history': json.loads(self.legal_pack_qa_history) if self.legal_pack_qa_history else [],
+            'legal_pack_documents': json.loads(self.legal_pack_documents) if self.legal_pack_documents else [],
             'legal_pack_summary_pdf': self.legal_pack_summary_pdf,
             'legal_pack_analyzed_at': self.legal_pack_analyzed_at.isoformat() if self.legal_pack_analyzed_at else None,
             'legal_pack_session_id': self.legal_pack_session_id,
@@ -270,6 +282,44 @@ def init_db():
 # Initialize database before running the app
 init_db()
 
+def save_documents(session_id, processed_files, initial_analysis=None, qa_history=None):
+    """Save documents and analysis history to database."""
+    try:
+        session = DocumentSession.query.get(session_id)
+        if not session:
+            session = DocumentSession(
+                id=session_id,
+                documents=processed_files,
+                initial_analysis=initial_analysis,
+                qa_history=qa_history or []
+            )
+            db.session.add(session)
+        else:
+            session.documents = processed_files
+            if initial_analysis is not None:
+                session.initial_analysis = initial_analysis
+            if qa_history is not None:
+                session.qa_history = qa_history
+        
+        db.session.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Error saving documents to database: {str(e)}")
+        return False
+
+def load_documents(session_id):
+    """Load documents and analysis history from database."""
+    try:
+        session = DocumentSession.query.get(session_id)
+        if not session:
+            logger.error(f"Session not found in database: {session_id}")
+            return None, None, None
+            
+        return session.documents, session.initial_analysis, session.qa_history
+    except Exception as e:
+        logger.error(f"Error loading documents from database: {str(e)}")
+        return None, None, None
+
 def process_scanned_page(image_path):
     """Process a scanned page using Google Cloud Vision API."""
     try:
@@ -290,7 +340,7 @@ def process_scanned_page(image_path):
 
         return text
     except Exception as e:
-        logging.error(f"Error in Google Cloud Vision OCR: {str(e)}")
+        logger.error(f"Error in Google Cloud Vision OCR: {str(e)}")
         return ""
 
 def extract_text_from_pdf(pdf_path):
@@ -337,7 +387,7 @@ def extract_text_from_pdf(pdf_path):
         return combined_text
         
     except Exception as e:
-        logging.error(f"Error extracting text from PDF: {str(e)}")
+        logger.error(f"Error extracting text from PDF: {str(e)}")
         return ""
 
 def extract_text_from_doc(doc_path):
@@ -510,46 +560,6 @@ def process_zip_file(zip_file_path):
     logger.info(f"Total tokens across all documents: {total_tokens}")
     
     return processed_files, failed_files, "\n".join(processing_summary)
-
-def save_documents(session_id, processed_files, initial_analysis=None, qa_history=None):
-    """Save documents and analysis history to disk."""
-    try:
-        # Ensure the storage directory exists with proper permissions
-        STORAGE_DIR.mkdir(mode=0o777, parents=True, exist_ok=True)
-        
-        file_path = STORAGE_DIR / f"{session_id}.json"
-        data = {
-            'documents': processed_files,  # Save the full array of processed files
-            'initial_analysis': initial_analysis,
-            'qa_history': qa_history or []
-        }
-        
-        # Write the file with explicit encoding
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-            
-        # Set file permissions
-        os.chmod(file_path, 0o666)
-        
-        return True
-    except Exception as e:
-        logger.error(f"Error saving documents: {str(e)}")
-        return False
-
-def load_documents(session_id):
-    """Load documents and analysis history from disk."""
-    try:
-        file_path = STORAGE_DIR / f"{session_id}.json"
-        if not file_path.exists():
-            return None
-            
-        with open(file_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            
-        return data['documents'], data['initial_analysis'], data['qa_history']
-    except Exception as e:
-        logger.error(f"Error loading documents: {str(e)}")
-        return None
 
 def analyze_with_claude(documents_content, processing_summary=None, follow_up_question=None, initial_analysis=None, qa_history=None):
     """Analyze all documents together using Claude API."""
@@ -752,7 +762,7 @@ List any important information that appears to be missing from the legal pack
                 raise ValueError(f"Failed to get analysis from Claude API: {str(api_error)}")
 
         if not response:
-            raise ValueError("Empty response from Claude API")
+            raise ValueError("Empty response from Claude")
             
         logger.info(f"Received analysis of length: {len(response)}")
         
@@ -917,6 +927,7 @@ def duplicate_property(property_id):
             total_yield=original.total_yield,
             legal_pack_analysis=original.legal_pack_analysis,
             legal_pack_qa_history=original.legal_pack_qa_history,
+            legal_pack_documents=original.legal_pack_documents,
             legal_pack_summary_pdf=original.legal_pack_summary_pdf,
             legal_pack_analyzed_at=original.legal_pack_analyzed_at,
             legal_pack_session_id=original.legal_pack_session_id
@@ -929,38 +940,13 @@ def duplicate_property(property_id):
     except Exception as e:
         return jsonify({'error': f'Failed to duplicate property: {str(e)}'}), 500
 
-@app.route('/test-property-details')
-def test_property_details():
-    # Sample property data for testing
-    test_property = {
-        'main_photo': 'https://media.rightmove.co.uk/dir/crop/10:9-16:9/108k/107051/128095236/107051_11261955_IMG_00_0000_max_476x317.jpeg',
-        'floorplan': 'https://media.rightmove.co.uk/dir/108k/107051/128095236/107051_11261955_FLP_00_0000_max_600x600.jpeg',
-        'address': '123 Test Street, London',
-        'description': 'A beautiful test property with modern amenities and great location.',
-        'bedrooms': 3,
-        'bathrooms': 2,
-        'property_type': 'Semi-Detached',
-        'station_distance': '0.5',
-        'key_features': [
-            'Modern Kitchen',
-            'Large Garden',
-            'Recently Renovated',
-            'Close to Schools'
-        ],
-        'purchase_price': 250000,
-        'legal_fees': 1500,
-        'survey_costs': 800,
-        'refurb_costs': 15000,
-        'contingency': 5000,
-        'bridging_loan_amount': 200000,
-        'bridging_loan_term': 6,
-        'bridging_loan_rate': 0.89,
-        'mortgage_amount': 187500,
-        'mortgage_term': 25,
-        'mortgage_rate': 4.5,
-        'rental_income': 1500
-    }
-    return render_template('property_details.html', property=test_property)
+@app.route('/api/properties/<int:property_id>', methods=['GET'])
+def get_property(property_id):
+    try:
+        property = Property.query.get_or_404(property_id)
+        return jsonify(property.to_dict())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/properties', methods=['GET'])
 def get_properties():
@@ -1037,6 +1023,7 @@ def create_property():
             total_yield=data.get('total_yield'),
             legal_pack_analysis=data.get('legal_pack_analysis'),
             legal_pack_qa_history=data.get('legal_pack_qa_history'),
+            legal_pack_documents=data.get('legal_pack_documents'),
             legal_pack_summary_pdf=data.get('legal_pack_summary_pdf'),
             legal_pack_analyzed_at=data.get('legal_pack_analyzed_at'),
             legal_pack_session_id=data.get('legal_pack_session_id'),
@@ -1134,16 +1121,13 @@ def analyze_legal_pack():
             # Save processing results
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             session_id = f"session_{timestamp}"
-            results_file = os.path.join('document_storage', f'processing_results_{session_id}.json')
-            os.makedirs('document_storage', exist_ok=True)
             
-            with open(results_file, 'w') as f:
-                json.dump({
-                    'documents': documents_content,
-                    'session_id': session_id
-                }, f)
+            # Save documents using the save_documents function
+            save_success = save_documents(session_id, documents_content)
+            if not save_success:
+                return jsonify({'error': 'Failed to save documents'}), 500
             
-            app.logger.info(f"Processing results saved to {results_file}")
+            app.logger.info(f"Processing results saved for session {session_id}")
 
             # Count total tokens
             total_tokens = sum(count_tokens(doc['content']) for doc in documents_content)
@@ -1154,6 +1138,16 @@ def analyze_legal_pack():
                 # Get analysis from Claude
                 analysis = analyze_with_claude(documents_content)
                 
+                # Save documents with initial analysis and property ID
+                session = DocumentSession(
+                    id=session_id,
+                    documents=documents_content,
+                    initial_analysis=analysis,
+                    qa_history=[],
+                    property_id=property_id
+                )
+                db.session.add(session)
+                
                 # Save analysis to property in database
                 property = Property.query.get(property_id)
                 if property:
@@ -1161,8 +1155,9 @@ def analyze_legal_pack():
                     property.legal_pack_session_id = session_id
                     property.legal_pack_analyzed_at = datetime.now()
                     property.legal_pack_qa_history = '[]'  # Initialize empty QA history
+                    property.legal_pack_documents = json.dumps(documents_content)  # Store documents
                     db.session.commit()
-                    app.logger.info(f"Saved analysis to property {property_id}")
+                    app.logger.info(f"Saved analysis and documents to property {property_id}")
                 else:
                     app.logger.error(f"Property {property_id} not found")
                     return jsonify({'error': 'Property not found'}), 404
@@ -1204,87 +1199,68 @@ def ask_followup():
                 'suggestion': 'Please provide all required information'
             }), 400
         
-        # Load the documents and previous analysis
+        # Load the documents and previous analysis from the property
         try:
-            documents, initial_analysis, qa_history = load_documents(session_id)
-            logger.info(f"Loaded documents for session {session_id}")
-            logger.info(f"Number of documents: {len(documents) if documents else 0}")
-            logger.info(f"Initial analysis length: {len(initial_analysis) if initial_analysis else 0}")
-            logger.info(f"QA history length: {len(qa_history) if qa_history else 0}")
-        except Exception as e:
-            error_msg = f"Failed to load documents: {str(e)}"
-            logger.error(error_msg)
-            return jsonify({
-                'error': error_msg,
-                'suggestion': 'Please try uploading the documents again'
-            }), 500
-        
-        if not documents:
-            error_msg = "No documents found for this session"
-            logger.error(error_msg)
-            return jsonify({
-                'error': error_msg,
-                'suggestion': 'Please upload the documents again'
-            }), 404
+            property = Property.query.get(property_id)
+            if not property:
+                return jsonify({
+                    'error': 'Property not found',
+                    'suggestion': 'Please check the property ID'
+                }), 404
+
+            if not property.legal_pack_analysis or not property.legal_pack_documents:
+                return jsonify({
+                    'error': 'No legal pack analysis or documents found',
+                    'suggestion': 'Please analyze the legal pack first'
+                }), 404
+
+            # Get QA history and documents from the property
+            qa_history = json.loads(property.legal_pack_qa_history) if property.legal_pack_qa_history else []
+            documents = json.loads(property.legal_pack_documents)
             
-        if not initial_analysis:
-            error_msg = "No initial analysis found for this session"
-            logger.error(error_msg)
+            # Get answer from Claude
+            try:
+                result = analyze_with_claude(
+                    documents,  # Pass the original documents
+                    follow_up_question=question,
+                    initial_analysis=property.legal_pack_analysis,
+                    qa_history=qa_history
+                )
+                logger.info("Successfully got answer from Claude")
+                
+                if not result:
+                    raise ValueError("Empty response from Claude")
+                    
+            except Exception as e:
+                error_msg = f"Failed to get answer from Claude: {str(e)}"
+                logger.error(error_msg)
+                return jsonify({
+                    'error': error_msg,
+                    'suggestion': 'Please try again or contact support if the problem persists'
+                }), 500
+            
+            # Update QA history
+            qa_history.append({
+                'question': question,
+                'answer': result
+            })
+            
+            # Save updated QA history to property
+            property.legal_pack_qa_history = json.dumps(qa_history)
+            db.session.commit()
+            logger.info("Successfully updated QA history in database")
+            
             return jsonify({
-                'error': error_msg,
-                'suggestion': 'Please perform initial analysis first'
-            }), 404
-        
-        # Get answer from Claude
-        try:
-            result = analyze_with_claude(
-                documents,
-                follow_up_question=question,
-                initial_analysis=initial_analysis,
-                qa_history=qa_history
-            )
-            logger.info("Successfully got answer from Claude")
+                'answer': result
+            })
+                
         except Exception as e:
-            error_msg = f"Failed to get answer from Claude: {str(e)}"
+            error_msg = f"Failed to process follow-up question: {str(e)}"
             logger.error(error_msg)
             return jsonify({
                 'error': error_msg,
                 'suggestion': 'Please try again or contact support if the problem persists'
             }), 500
-        
-        if not result:
-            error_msg = "Invalid response format from analysis"
-            logger.error(f"{error_msg}: {result}")
-            return jsonify({
-                'error': error_msg,
-                'suggestion': 'Please try again or contact support'
-            }), 500
-        
-        # Update QA history
-        try:
-            qa_history = qa_history or []
-            qa_history.append({
-                'question': question,
-                'answer': result
-            })
-            # Save to document storage
-            save_documents(session_id, documents, initial_analysis, qa_history)
-            
-            # Save to property database
-            property = Property.query.get(property_id)
-            if property:
-                property.legal_pack_qa_history = json.dumps(qa_history)
-                db.session.commit()
-                
-            logger.info("Successfully updated QA history in both storage and database")
-        except Exception as e:
-            # Log the error but don't fail the request
-            logger.error(f"Failed to update QA history: {str(e)}")
-        
-        return jsonify({
-            'answer': result
-        })
-            
     except Exception as e:
         error_msg = f"Unexpected error in ask_followup: {str(e)}"
         logger.error(error_msg)
@@ -1318,6 +1294,39 @@ def system_check():
     status['libreoffice'] = bool(soffice_path)
     
     return jsonify(status)
+
+@app.route('/test-property-details')
+def test_property_details():
+    # Sample property data for testing
+    test_property = {
+        'main_photo': 'https://media.rightmove.co.uk/dir/crop/10:9-16:9/108k/107051/128095236/107051_11261955_IMG_00_0000_max_476x317.jpeg',
+        'floorplan': 'https://media.rightmove.co.uk/dir/108k/107051/128095236/107051_11261955_FLP_00_0000_max_600x600.jpeg',
+        'address': '123 Test Street, London',
+        'description': 'A beautiful test property with modern amenities and great location.',
+        'bedrooms': 3,
+        'bathrooms': 2,
+        'property_type': 'Semi-Detached',
+        'station_distance': '0.5',
+        'key_features': [
+            'Modern Kitchen',
+            'Large Garden',
+            'Recently Renovated',
+            'Close to Schools'
+        ],
+        'purchase_price': 250000,
+        'legal_fees': 1500,
+        'survey_costs': 800,
+        'refurb_costs': 15000,
+        'contingency': 5000,
+        'bridging_loan_amount': 200000,
+        'bridging_loan_term': 6,
+        'bridging_loan_rate': 0.89,
+        'mortgage_amount': 187500,
+        'mortgage_term': 25,
+        'mortgage_rate': 4.5,
+        'rental_income': 1500
+    }
+    return render_template('property_details.html', property=test_property)
 
 if __name__ == '__main__':
     with app.app_context():
