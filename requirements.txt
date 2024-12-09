@@ -19,5 +19,5 @@ pdf2image==1.16.3
 pytesseract==0.3.10
 reportlab==4.1.0
 Pillow>=10.0.0
-google-cloud-vision==3.4.4
-google-cloud-documentai==2.20.1
+google-cloud-vision==3.8.1
+google-cloud-documentai==3.0.1
