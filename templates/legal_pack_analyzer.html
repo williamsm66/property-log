@@ -236,108 +236,76 @@
 
         async function analyzeLegalPack(e) {
             e.preventDefault();
-            const fileInput = document.getElementById('file');
-            const propertyId = document.getElementById('propertyId').value;
-
-            if (!fileInput.files[0]) {
-                displayErrorMessage('Please select a file first');
-                return;
-            }
-            
             clearError();
             showLoadingSpinner();
-            
+
             const formData = new FormData();
-            for (let i = 0; i < fileInput.files.length; i++) {
-                formData.append('files[]', fileInput.files[i]);
-            }
-            formData.append('property_id', propertyId);
+            const files = document.querySelector('input[type="file"]').files;
             
+            if (!files || files.length === 0) {
+                displayErrorMessage('Please select at least one file to analyze');
+                hideLoadingSpinner();
+                return;
+            }
+
+            // Add each file to the FormData
+            for (let i = 0; i < files.length; i++) {
+                formData.append('files[]', files[i]);
+            }
+            
+            // Add property ID
+            formData.append('property_id', "{{ property_id }}");
+
             try {
                 const response = await fetch('/analyze-legal-pack', {
                     method: 'POST',
                     body: formData
                 });
-                
+
                 if (!response.ok) {
                     const contentType = response.headers.get("content-type");
                     if (contentType && contentType.indexOf("application/json") !== -1) {
                         const errorData = await response.json();
-                        throw new Error(errorData.error + (errorData.suggestion ? `. ${errorData.suggestion}` : ''));
-                    } else {
-                        throw new Error(`Server error: ${response.status}`);
+                        throw new Error(errorData.error || 'Failed to analyze legal pack');
                     }
+                    throw new Error('Failed to analyze legal pack');
                 }
-                
+
                 const data = await response.json();
-                console.log('Response data:', data);
-
-                if (data.error) {
-                    displayErrorMessage(data.error, data.suggestion);
-                } else {
-                    currentSessionId = data.session_id;
-                    
-                    // Show the follow-up section
-                    const followupSection = document.getElementById('followupSection');
-                    if (followupSection) {
-                        followupSection.classList.remove('hidden');
-                    }
-                    
-                    // Create a new container for the analysis results
-                    const container = document.createElement('div');
-                    container.className = 'mt-8 space-y-6';
-                    container.innerHTML = `
-                        <div class="bg-white rounded-lg shadow-md p-6">
-                            <h3 class="text-xl font-bold mb-4">Analysis Results</h3>
-                            <div class="prose max-w-none text-gray-700 whitespace-pre-wrap break-words">
-                                ${data.analysis}
-                            </div>
-                        </div>
-                        
-                        <div class="bg-white rounded-lg shadow-md p-6">
-                            <h3 class="text-xl font-bold mb-4">Document Processing Details</h3>
-                            
-                            <div class="mb-8">
-                                <h4 class="text-lg font-medium text-green-700 mb-4">Successfully Processed Files:</h4>
-                                <ul class="list-disc pl-5 space-y-2">
-                                    ${data.documents.map(doc => 
-                                        `<li class="text-gray-700">${escapeHtml(doc.name)} (${doc.tokens.toLocaleString()} tokens)</li>`
-                                    ).join('')}
-                                </ul>
-                            </div>
-                            
-                            <div class="bg-blue-50 rounded-lg p-6">
-                                <h4 class="text-lg font-bold mb-4">Token Usage Information</h4>
-                                
-                                <div class="mb-4">
-                                    <h5 class="text-md font-medium text-blue-700 mb-2">Per Document Token Usage:</h5>
-                                    <ul class="list-none space-y-2">
-                                        ${data.documents.map(doc => 
-                                            `<li class="text-gray-700">${escapeHtml(doc.name)}: ${doc.tokens.toLocaleString()} tokens</li>`
-                                        ).join('')}
-                                    </ul>
-                                </div>
-                                
-                                <div class="pt-4 border-t border-blue-200">
-                                    <h5 class="text-md font-medium text-blue-700 mb-2">Total Token Usage:</h5>
-                                    <p class="text-gray-700">${data.total_tokens.toLocaleString()} tokens</p>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                    
-                    // Find the results section and replace its contents
-                    const resultsSection = document.getElementById('results');
-                    resultsSection.innerHTML = '';
-                    resultsSection.appendChild(container);
-
-                    // Hide the loading spinner and clear the file input
-                    hideLoadingSpinner();
-                    fileInput.value = '';
+                
+                // Update the UI with analysis results
+                const analysisSection = document.getElementById('analysisSection');
+                if (analysisSection) {
+                    analysisSection.classList.remove('hidden');
                 }
+
+                // Show the follow-up section
+                const followupSection = document.getElementById('followupSection');
+                if (followupSection) {
+                    followupSection.classList.remove('hidden');
+                }
+
+                // Update status message
+                const statusMessage = document.getElementById('statusMessage');
+                if (statusMessage) {
+                    statusMessage.textContent = `Analysis completed successfully! ${data.stats ? `Processed ${data.stats.total_files} files with ${data.stats.total_words} words.` : ''}`;
+                    statusMessage.classList.remove('text-red-500');
+                    statusMessage.classList.add('text-green-500');
+                }
+
+                // Store the session ID if provided
+                if (data.session_id) {
+                    currentSessionId = data.session_id;
+                }
+
+                // Reload the page to show updated analysis
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1500);
+
             } catch (error) {
                 console.error('Error:', error);
-                displayErrorMessage(error.message || 'Error analyzing legal pack');
+                displayErrorMessage(error.message || 'Failed to analyze legal pack');
             } finally {
                 hideLoadingSpinner();
             }
