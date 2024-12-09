@@ -47,6 +47,9 @@ logging.getLogger('werkzeug').setLevel(logging.INFO)
 # Load environment variables
 load_dotenv()
 
+# Initialize Google Cloud clients
+vision_client = vision.ImageAnnotatorClient()
+
 # Set timeout to 5 minutes
 WSGIRequestHandler.protocol_version = "HTTP/1.1"
 
