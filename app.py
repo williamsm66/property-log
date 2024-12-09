@@ -105,6 +105,16 @@ if not os.path.exists(db_path):
 # Initialize database
 db = SQLAlchemy(app)
 
+class Analysis(db.Model):
+    __tablename__ = 'analysis'
+    id = db.Column(db.Integer, primary_key=True)
+    property_id = db.Column(db.Integer, db.ForeignKey('property.id'))
+    content = db.Column(db.Text)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<Analysis {self.id} for property {self.property_id}>'
+
 def init_db():
     """Initialize database and create tables."""
     try:
