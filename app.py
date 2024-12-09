@@ -26,6 +26,7 @@ from pathlib import Path
 from google.cloud import vision
 from google.cloud import documentai_v1 as documentai
 from datetime import timedelta  # Import timedelta for viewing schedule
+import gc  # Import garbage collector
 
 # Configure logging
 logging.basicConfig(
@@ -320,75 +321,112 @@ def load_documents(session_id):
         logger.error(f"Error loading documents from database: {str(e)}")
         return None, None, None
 
-def process_scanned_page(image_path):
+def process_scanned_page(image_data):
     """Process a scanned page using Google Cloud Vision API."""
     try:
         client = vision.ImageAnnotatorClient()
-
-        with io.open(image_path, 'rb') as image_file:
-            content = image_file.read()
-
-        image = vision.Image(content=content)
-        response = client.document_text_detection(image=image)
-        text = response.full_text_annotation.text
-
+        
+        # If image_data is bytes, use it directly, otherwise read the file
+        if isinstance(image_data, bytes):
+            image = vision.Image(content=image_data)
+        else:
+            with open(image_data, 'rb') as image_file:
+                content = image_file.read()
+                image = vision.Image(content=content)
+        
+        # Optimize memory by requesting only text detection
+        response = client.text_detection(
+            image=image,
+            image_context={"language_hints": ["en"]}
+        )
+        
         if response.error.message:
-            raise Exception(
-                '{}\nFor more info on error messages, check: '
-                'https://cloud.google.com/apis/design/errors'.format(
-                    response.error.message))
-
+            app.logger.error(f"Error from Vision API: {response.error.message}")
+            return ""
+            
+        if response.full_text_annotation:
+            text = response.full_text_annotation.text
+        elif response.text_annotations:
+            text = response.text_annotations[0].description
+        else:
+            text = ""
+            
+        # Clear the response object to free memory
+        del response
         return text
+        
     except Exception as e:
-        logger.error(f"Error in Google Cloud Vision OCR: {str(e)}")
+        app.logger.error(f"Error in process_scanned_page: {str(e)}")
         return ""
 
 def extract_text_from_pdf(pdf_path):
     """Extract text from PDF, using Google Cloud Vision for scanned pages."""
     try:
+        text_content = []
+        page_count = 0
+        max_pages = 50  # Limit number of pages to process
+        
+        app.logger.info(f"Starting PDF extraction for: {pdf_path}")
         reader = PyPDF2.PdfReader(pdf_path)
-        logging.info(f"Successfully created PDF reader. Number of pages: {len(reader.pages)}")
+        total_pages = len(reader.pages)
+        app.logger.info(f"PDF has {total_pages} pages. Will process up to {max_pages} pages.")
         
-        all_text = []
-        for i, page in enumerate(reader.pages):
-            logging.info(f"Processing page {i+1}")
-            
-            # Try to extract text directly first
-            text = page.extract_text()
-            
-            # If little or no text extracted, page might be scanned
-            if len(text.strip()) < 50:  # Threshold for considering a page as scanned
-                logging.info(f"Page {i+1} appears to be scanned, attempting OCR")
+        if total_pages > max_pages:
+            app.logger.warning(f"PDF has {total_pages} pages, but only processing first {max_pages} pages")
+            text_content.append(f"\n[Note: This document has {total_pages} pages, but only the first {max_pages} pages were processed to ensure stable performance.]\n")
+        
+        for page_num in range(min(total_pages, max_pages)):
+            try:
+                app.logger.info(f"Processing page {page_num + 1}/{total_pages}")
+                page = reader.pages[page_num]
                 
-                # Convert PDF page to image
-                images = convert_from_path(pdf_path, first_page=i+1, last_page=i+1)
-                if images:
-                    # Save the image temporarily
-                    temp_image_path = f"/tmp/page_{i+1}.png"
-                    images[0].save(temp_image_path, 'PNG')
+                # Try extracting text directly first
+                extracted_text = page.extract_text()
+                
+                # If minimal text extracted, page might be scanned
+                if len(extracted_text.strip()) < 50:
+                    app.logger.info(f"Page {page_num + 1} appears to be scanned, attempting OCR")
                     
-                    # Process with Google Cloud Vision
-                    text = process_scanned_page(temp_image_path)
+                    # Convert PDF page to image
+                    images = convert_from_path(pdf_path, first_page=page_num+1, last_page=page_num+1)
+                    if images:
+                        # Process first image (should only be one since we're doing one page)
+                        image = images[0]
+                        # Save image to bytes
+                        img_byte_arr = io.BytesIO()
+                        image.save(img_byte_arr, format='PNG')
+                        img_byte_arr = img_byte_arr.getvalue()
+                        
+                        # Use Google Cloud Vision for OCR
+                        extracted_text = process_scanned_page(img_byte_arr)
+                        
+                        # Clear memory
+                        del images
+                        del image
+                        del img_byte_arr
                     
-                    # Clean up
-                    os.remove(temp_image_path)
-                    
-                    if not text:
-                        logging.error(f"OCR failed for page {i+1}")
-                else:
-                    logging.error(f"Failed to convert page {i+1} to image")
-            else:
-                logging.info(f"Successfully processed page {i+1}. Text length: {len(text)}")
-            
-            all_text.append(text)
+                text_content.append(extracted_text)
+                page_count += 1
+                
+                # Clear memory after each page
+                del page
+                if page_count % 10 == 0:  # Every 10 pages
+                    gc.collect()  # Force garbage collection
+                
+            except Exception as e:
+                app.logger.error(f"Error processing page {page_num + 1}: {str(e)}")
+                text_content.append(f"\n[Error processing page {page_num + 1}]\n")
+                continue
         
-        combined_text = "\n".join(all_text)
-        logging.info(f"Successfully extracted text from all pages. Total text length: {len(combined_text)}")
-        return combined_text
+        # Clear memory
+        del reader
+        gc.collect()
+        
+        return "\n".join(text_content)
         
     except Exception as e:
-        logger.error(f"Error extracting text from PDF: {str(e)}")
-        return ""
+        app.logger.error(f"Error in extract_text_from_pdf: {str(e)}")
+        raise
 
 def extract_text_from_doc(doc_path):
     """Extract text from Word documents using multiple methods for maximum compatibility."""
