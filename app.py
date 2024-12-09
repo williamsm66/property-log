@@ -1122,13 +1122,6 @@ def analyze_legal_pack():
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             session_id = f"session_{timestamp}"
             
-            # Save documents using the save_documents function
-            save_success = save_documents(session_id, documents_content)
-            if not save_success:
-                return jsonify({'error': 'Failed to save documents'}), 500
-            
-            app.logger.info(f"Processing results saved for session {session_id}")
-
             # Count total tokens
             total_tokens = sum(count_tokens(doc['content']) for doc in documents_content)
             app.logger.info(f"Total tokens across all documents: {total_tokens}")
@@ -1139,16 +1132,11 @@ def analyze_legal_pack():
                 analysis = analyze_with_claude(documents_content)
                 
                 # Save documents with initial analysis and property ID
-                session = DocumentSession(
-                    id=session_id,
-                    documents=documents_content,
-                    initial_analysis=analysis,
-                    qa_history=[],
-                    property_id=property_id
-                )
-                db.session.add(session)
+                save_success = save_documents(session_id, documents_content, analysis, [])
+                if not save_success:
+                    return jsonify({'error': 'Failed to save documents'}), 500
                 
-                # Save analysis to property in database
+                # Update the property with the session info
                 property = Property.query.get(property_id)
                 if property:
                     property.legal_pack_analysis = analysis
@@ -1156,6 +1144,12 @@ def analyze_legal_pack():
                     property.legal_pack_analyzed_at = datetime.now()
                     property.legal_pack_qa_history = '[]'  # Initialize empty QA history
                     property.legal_pack_documents = json.dumps(documents_content)  # Store documents
+                    
+                    # Update the document session with the property ID
+                    session = DocumentSession.query.get(session_id)
+                    if session:
+                        session.property_id = property_id
+                    
                     db.session.commit()
                     app.logger.info(f"Saved analysis and documents to property {property_id}")
                 else:
