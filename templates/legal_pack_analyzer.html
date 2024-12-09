@@ -257,6 +257,16 @@
                     body: formData
                 });
                 
+                if (!response.ok) {
+                    const contentType = response.headers.get("content-type");
+                    if (contentType && contentType.indexOf("application/json") !== -1) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error + (errorData.suggestion ? `. ${errorData.suggestion}` : ''));
+                    } else {
+                        throw new Error(`Server error: ${response.status}`);
+                    }
+                }
+                
                 const data = await response.json();
                 console.log('Response data:', data);
 
@@ -325,7 +335,7 @@
                 }
             } catch (error) {
                 console.error('Error:', error);
-                displayErrorMessage('Error analyzing legal pack: ' + error.message);
+                displayErrorMessage(error.message || 'Error analyzing legal pack');
             } finally {
                 hideLoadingSpinner();
             }
