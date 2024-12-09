@@ -374,96 +374,52 @@
                         followupSection.classList.remove('hidden');
                     }
                     
-                    // Update the analysis section without full page reload
-                    const analysisSection = document.querySelector('.prose.max-w-none');
-                    if (analysisSection) {
-                        // Create container for analysis results and summaries
-                        const resultsContainer = document.createElement('div');
-                        resultsContainer.className = 'space-y-6 mt-8';
-                        
-                        // Add the analysis content
-                        const analysisContent = document.createElement('div');
-                        analysisContent.className = 'prose max-w-none text-gray-700 whitespace-pre-wrap break-words';
-                        analysisContent.innerHTML = data.analysis;
-                        resultsContainer.appendChild(analysisContent);
-
-                        // Add processing summary section
-                        const summarySection = document.createElement('div');
-                        summarySection.id = 'processing-summary';
-                        summarySection.className = 'bg-white rounded-lg p-6 border border-gray-200';
-                        summarySection.innerHTML = `
-                            <h4 class="text-xl font-semibold mb-4">Document Processing Details</h4>
-                            <div class="space-y-4">
-                                <div id="file-status-list" class="space-y-3 bg-gray-50 p-4 rounded-lg"></div>
-                                <div id="token-usage" class="mt-4 p-4 bg-blue-50 rounded-lg">
-                                    <h5 class="text-lg font-semibold mb-2">Token Usage Information</h5>
-                                    <div id="token-details" class="space-y-2 text-sm text-gray-700"></div>
+                    // Create a new container for the analysis results
+                    const container = document.createElement('div');
+                    container.className = 'mt-8 bg-white rounded-lg shadow-md p-6';
+                    container.innerHTML = `
+                        <div class="space-y-6">
+                            <div>
+                                <h3 class="text-xl font-bold mb-4">Analysis Results</h3>
+                                <div class="prose max-w-none text-gray-700 whitespace-pre-wrap break-words">
+                                    ${data.analysis}
                                 </div>
                             </div>
-                        `;
-                        resultsContainer.appendChild(summarySection);
-
-                        // Replace the existing analysis section with the new container
-                        analysisSection.parentNode.replaceChild(resultsContainer, analysisSection);
-
-                        // Now display the summaries
-                        if (data.processing_summary) {
-                            console.log('Calling displayProcessingSummary');
-                            displayProcessingSummary(data.processing_summary);
-                        }
-                        
-                        if (data.token_usage) {
-                            console.log('Calling displayTokenUsage');
-                            displayTokenUsage(data.token_usage);
-                        }
-                    } else {
-                        // If analysis section doesn't exist, create it with all components
-                        const container = document.createElement('div');
-                        container.className = 'mt-8 bg-white rounded-lg shadow-md p-6';
-                        container.innerHTML = `
-                            <div class="space-y-6">
-                                <div>
-                                    <h3 class="text-xl font-bold mb-4">Analysis</h3>
-                                    <div class="prose max-w-none text-gray-700 whitespace-pre-wrap break-words">
-                                        ${data.analysis}
-                                    </div>
-                                </div>
-                                
-                                <div id="processing-summary" class="bg-white rounded-lg p-6 border border-gray-200">
-                                    <h4 class="text-xl font-semibold mb-4">Document Processing Details</h4>
-                                    <div class="space-y-4">
-                                        <div id="file-status-list" class="space-y-3 bg-gray-50 p-4 rounded-lg"></div>
-                                        <div id="token-usage" class="mt-4 p-4 bg-blue-50 rounded-lg">
-                                            <h5 class="text-lg font-semibold mb-2">Token Usage Information</h5>
-                                            <div id="token-details" class="space-y-2 text-sm text-gray-700"></div>
-                                        </div>
+                            
+                            <div id="processing-summary" class="bg-white rounded-lg p-6 border border-gray-200">
+                                <h4 class="text-xl font-semibold mb-4">Document Processing Details</h4>
+                                <div class="space-y-4">
+                                    <div id="file-status-list" class="space-y-3 bg-gray-50 p-4 rounded-lg"></div>
+                                    <div id="token-usage" class="mt-4 p-4 bg-blue-50 rounded-lg">
+                                        <h5 class="text-lg font-semibold mb-2">Token Usage Information</h5>
+                                        <div id="token-details" class="space-y-2 text-sm text-gray-700"></div>
                                     </div>
                                 </div>
                             </div>
-                        `;
-                        
-                        // Insert after the upload form
-                        const uploadForm = document.querySelector('#uploadForm').closest('.bg-white.rounded-lg.shadow-md.p-6');
-                        if (uploadForm && uploadForm.nextSibling) {
-                            uploadForm.parentNode.insertBefore(container, uploadForm.nextSibling);
-                        }
+                        </div>
+                    `;
+                    
+                    // Find the results section and replace its contents
+                    const resultsSection = document.getElementById('results');
+                    resultsSection.innerHTML = ''; // Clear existing content
+                    resultsSection.appendChild(container);
 
-                        // Now display the summaries
-                        if (data.processing_summary) {
-                            console.log('Calling displayProcessingSummary');
-                            displayProcessingSummary(data.processing_summary);
-                        }
-                        
-                        if (data.token_usage) {
-                            console.log('Calling displayTokenUsage');
-                            displayTokenUsage(data.token_usage);
-                        }
+                    // Display the processing summaries
+                    if (data.processing_summary) {
+                        console.log('Calling displayProcessingSummary');
+                        displayProcessingSummary(data.processing_summary);
                     }
                     
-                    // Refresh the page after a short delay to show the saved analysis
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 2000);
+                    if (data.token_usage) {
+                        console.log('Calling displayTokenUsage');
+                        displayTokenUsage(data.token_usage);
+                    }
+
+                    // Hide the loading spinner
+                    hideLoadingSpinner();
+                    
+                    // Clear the file input to allow new uploads
+                    fileInput.value = '';
                 }
             } catch (error) {
                 console.error('Error:', error);
