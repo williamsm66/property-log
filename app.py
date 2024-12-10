@@ -28,6 +28,7 @@ from datetime import timedelta  # Import timedelta for viewing schedule
 import gc  # Import garbage collector
 from threading import Thread
 import psutil
+import zipfile
 
 # Initialize Flask app first
 app = Flask(__name__)
