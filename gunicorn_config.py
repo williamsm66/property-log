@@ -9,10 +9,10 @@ backlog = 2048
 
 # Worker processes
 workers = multiprocessing.cpu_count() * 2 + 1
-worker_class = 'sync'
+worker_class = 'gevent'  # Using gevent for better handling of long-running requests
 worker_connections = 1000
-timeout = 300  # Increase timeout to 5 minutes
-graceful_timeout = 120
+timeout = 300  # 5 minutes
+graceful_timeout = 300  # Match main timeout
 keepalive = 2
 
 # Process naming

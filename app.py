@@ -29,6 +29,7 @@ import gc  # Import garbage collector
 from threading import Thread
 import psutil
 import zipfile
+from gevent import monkey; monkey.patch_all()
 
 # Initialize Flask app first
 app = Flask(__name__)
@@ -599,7 +600,6 @@ def process_zip_file(zip_file_path):
 
 def analyze_with_claude(documents_content, processing_summary=None, follow_up_question=None, initial_analysis=None, qa_history=None):
     """Analyze all documents together using Claude API."""
-    token_summary = None
     try:
         # Initialize the Anthropic client with the API key from environment variables
         api_key = os.getenv('CLAUDE_API_KEY')
@@ -610,11 +610,11 @@ def analyze_with_claude(documents_content, processing_summary=None, follow_up_qu
         logger.info(f"Analyzing documents with Claude (follow_up: {'yes' if follow_up_question else 'no'})")
         
         try:
-            client = anthropic.Anthropic(api_key=api_key)
+            client = anthropic.Anthropic(api_key=api_key, timeout=300)  # 5 minute timeout
             logger.info("Successfully initialized Anthropic client")
         except Exception as client_error:
             logger.error(f"Failed to initialize Anthropic client: {str(client_error)}")
-            raise ValueError(f"Failed to initialize Anthropic client: {str(client_error)}")
+            raise
         
         # Process documents in smaller batches
         MAX_BATCH_TOKENS = 12000  # Leave room for prompt and response
@@ -831,7 +831,7 @@ def process_documents(file_paths, follow_up=False):
         app.logger.info(f"API Key length: {len(api_key)}")
         
         # Initialize Anthropic client
-        client = anthropic.Anthropic(api_key=api_key)
+        client = anthropic.Anthropic(api_key=api_key, timeout=300)
         app.logger.info("Successfully initialized Anthropic client")
         
         # Process documents in smaller chunks
