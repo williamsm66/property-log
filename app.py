@@ -55,6 +55,7 @@ load_dotenv()
 logger.info("Environment variables loaded")
 
 # Initialize Google Cloud clients
+vision_client = None
 try:
     vision_client = vision.ImageAnnotatorClient()
     logger.info("Google Vision client initialized successfully")
@@ -280,11 +281,19 @@ def count_tokens(text):
     try:
         # Use cl100k_base encoding which is used by Claude
         encoding = tiktoken.get_encoding("cl100k_base")
-        return len(encoding.encode(text))
+        # Convert text to string if it isn't already
+        text_str = str(text)
+        # Process text in chunks to avoid recursion
+        chunk_size = 100000  # Process 100KB at a time
+        total_tokens = 0
+        for i in range(0, len(text_str), chunk_size):
+            chunk = text_str[i:i + chunk_size]
+            total_tokens += len(encoding.encode(chunk))
+        return total_tokens
     except Exception as e:
         logger.error(f"Error counting tokens: {str(e)}")
         # Return a conservative estimate if tiktoken fails
-        return len(text.split()) * 2
+        return len(str(text).split()) * 2
 
 def save_documents(session_id, processed_files, initial_analysis=None, qa_history=None):
     """Save documents and analysis history to database."""
@@ -389,9 +398,26 @@ def extract_text_from_pdf(file_path):
         app.logger.error(f"Error in PDF extraction: {str(e)}")
         raise
 
+def init_vision_client():
+    """Initialize or reinitialize the Vision client."""
+    global vision_client
+    try:
+        if not vision_client:
+            vision_client = vision.ImageAnnotatorClient()
+            logger.info("Google Vision client initialized successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to initialize Vision client: {str(e)}")
+        return False
+
 def process_scanned_page(image):
     """Process a scanned page using OCR."""
+    global vision_client
     try:
+        # Try to initialize Vision client if it's not already initialized
+        if not vision_client and not init_vision_client():
+            raise Exception("Vision client not available")
+            
         # Convert PIL image to bytes
         with io.BytesIO() as bio:
             image.save(bio, format='PNG')
@@ -411,11 +437,14 @@ def process_scanned_page(image):
         return ""
         
     except Exception as e:
-        app.logger.error(f"OCR Error: {str(e)}")
+        logger.error(f"OCR Error: {str(e)}")
+        # Try to reinitialize client for next time
+        init_vision_client()
         return ""
     finally:
         # Clean up
-        del image_bytes
+        if 'image_bytes' in locals():
+            del image_bytes
         gc.collect()
 
 def extract_text_from_doc(doc_path):
