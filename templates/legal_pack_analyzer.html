@@ -122,8 +122,8 @@
             <form id="uploadForm" class="mb-6 space-y-4">
                 <input type="hidden" id="propertyId" value="{{ property_id }}">
                 <div>
-                    <label for="file" class="block text-sm font-medium text-gray-700">Upload legal documents (PDF, DOC, DOCX, or ZIP)</label>
-                    <input type="file" id="file" name="files[]" class="mt-1 block w-full" required multiple>
+                    <label for="file" class="block text-sm font-medium text-gray-700">Upload legal documents (ZIP file containing PDFs, DOCs, or DOCXs)</label>
+                    <input type="file" id="file" name="file" accept=".zip" class="mt-1 block w-full" required>
                 </div>
                 <button type="submit" id="analyzeBtn" class="w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
                     Analyze Documents
