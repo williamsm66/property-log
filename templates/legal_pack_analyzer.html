@@ -240,18 +240,23 @@
             showLoadingSpinner();
 
             const formData = new FormData();
-            const files = document.querySelector('input[type="file"]').files;
+            const fileInput = document.querySelector('input[type="file"]');
+            const file = fileInput.files[0];
             
-            if (!files || files.length === 0) {
-                displayErrorMessage('Please select at least one file to analyze');
+            if (!file) {
+                displayErrorMessage('Please select a ZIP file to analyze');
                 hideLoadingSpinner();
                 return;
             }
 
-            // Add each file to the FormData
-            for (let i = 0; i < files.length; i++) {
-                formData.append('files[]', files[i]);
+            if (!file.name.toLowerCase().endsWith('.zip')) {
+                displayErrorMessage('Please select a ZIP file');
+                hideLoadingSpinner();
+                return;
             }
+
+            // Add the file to FormData
+            formData.append('file', file);
             
             // Add property ID
             formData.append('property_id', "{{ property_id }}");
