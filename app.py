@@ -10,8 +10,6 @@ import shutil
 import tempfile
 import logging
 import anthropic
-import zipfile
-from werkzeug.utils import secure_filename
 import tiktoken
 import pytesseract
 from pdf2image import convert_from_path
@@ -20,6 +18,7 @@ import subprocess
 from docx import Document
 import PyPDF2
 from dotenv import load_dotenv
+from werkzeug.utils import secure_filename
 from werkzeug.serving import WSGIRequestHandler
 import time
 from pathlib import Path
@@ -338,11 +337,10 @@ def extract_text_from_pdf(file_path):
             BATCH_SIZE = 10
             MAX_PAGES = 50  # Maximum total pages to process
             
-            for batch_start in range(0, min(total_pages, MAX_PAGES), BATCH_SIZE):
+            for batch_start in range(0, total_pages, BATCH_SIZE):
                 try:
                     end_page = min(batch_start + BATCH_SIZE, total_pages, MAX_PAGES)
                     batch_text = []
-                    app.logger.info(f"Processing batch of pages {batch_start+1} to {end_page}")
                     
                     for page_num in range(batch_start, end_page):
                         app.logger.info(f"Processing page {page_num+1}/{total_pages}")
@@ -609,7 +607,6 @@ def analyze_with_claude(documents_content, processing_summary=None, follow_up_qu
             raise ValueError("CLAUDE_API_KEY environment variable is not set")
         
         logger.info(f"Analyzing documents with Claude (follow_up: {'yes' if follow_up_question else 'no'})")
-        logger.info(f"API Key length: {len(api_key)}")  # Log key length for verification
         
         try:
             client = anthropic.Anthropic(api_key=api_key)
@@ -618,40 +615,65 @@ def analyze_with_claude(documents_content, processing_summary=None, follow_up_qu
             logger.error(f"Failed to initialize Anthropic client: {str(client_error)}")
             raise ValueError(f"Failed to initialize Anthropic client: {str(client_error)}")
         
-        # Prepare the prompt and track tokens
-        total_tokens = 0
-        documents_text = ""
-        document_tokens = []
+        # Process documents in smaller batches
+        MAX_BATCH_TOKENS = 12000  # Leave room for prompt and response
+        current_batch = []
+        current_batch_tokens = 0
+        all_responses = []
         
         for doc in documents_content:
+            # Calculate tokens for this document
             doc_text = f"\n{'='*50}\nDOCUMENT: {doc['name']}\n{'='*50}\n{doc['content']}"
             doc_tokens = count_tokens(doc_text)
-            total_tokens += doc_tokens
-            documents_text += doc_text
-            document_tokens.append({
-                'name': doc['name'],
-                'tokens': doc_tokens,
-                'length': len(doc['content'])
-            })
-            logger.info(f"Document {doc['name']}: {doc_tokens} tokens")
+            
+            if current_batch_tokens + doc_tokens > MAX_BATCH_TOKENS:
+                # Process current batch
+                batch_response = process_document_batch(current_batch, client)
+                if batch_response:
+                    all_responses.append(batch_response)
+                # Clear batch and memory
+                current_batch = []
+                current_batch_tokens = 0
+                
+                # Force garbage collection
+                gc.collect()
+            
+            current_batch.append(doc_text)
+            current_batch_tokens += doc_tokens
+            # Clear individual document text
+            doc_text = None
+            
+        # Process final batch if any
+        if current_batch:
+            batch_response = process_document_batch(current_batch, client)
+            if batch_response:
+                all_responses.append(batch_response)
         
-        logger.info(f"Total tokens for all documents: {total_tokens}")
+        # Combine all responses
+        combined_analysis = "\n\n".join(all_responses)
         
-        # Create token usage summary
-        token_summary = {
-            'total_tokens': total_tokens,
-            'documents': document_tokens,
-            'timestamp': datetime.now().isoformat()
-        }
-        
-        # Set max tokens for output
-        max_output_tokens = 4096
-        
-        # Prepare the prompt
-        if follow_up_question:
-            # Log the context we're using
-            logger.info(f"Using initial analysis of length: {len(initial_analysis) if initial_analysis else 0}")
-            logger.info(f"Using QA history of length: {len(qa_history) if qa_history else 0}")
+        # Final analysis of combined results
+        if not follow_up_question:
+            system_prompt = """You are an expert conveyancer. Review and consolidate the following analyses of legal pack documents into a single, coherent summary. Focus on the most important findings and risks."""
+            
+            try:
+                final_response = client.messages.create(
+                    model="claude-3-sonnet-20240229",
+                    max_tokens=4096,
+                    system=system_prompt,
+                    messages=[{
+                        "role": "user",
+                        "content": f"Previous analyses:\n\n{combined_analysis}\n\nProvide a consolidated summary focusing on:\n1. Most significant risks and findings\n2. Key recommendations\n3. Critical missing information"
+                    }],
+                    temperature=0
+                )
+                return final_response.content[0].text
+            except Exception as api_error:
+                logger.error(f"Claude API error during final analysis: {str(api_error)}")
+                raise ValueError(f"Failed to get final analysis from Claude API: {str(api_error)}")
+        else:
+            # For follow-up questions, use the original logic
+            system_prompt = """You are an expert conveyancer analyzing a legal pack for an auction property. You have previously provided a comprehensive analysis, and now need to answer a specific follow-up question."""
             
             context = "Here is the initial analysis of the legal pack:\n\n"
             context += initial_analysis + "\n\n"
@@ -661,169 +683,66 @@ def analyze_with_claude(documents_content, processing_summary=None, follow_up_qu
                 for qa in qa_history:
                     context += f"Q: {qa['question']}\nA: {qa['answer']}\n\n"
             
-            system_prompt = """You are an expert conveyancer analyzing a legal pack for an auction property. You have previously provided a comprehensive analysis, and now need to answer a specific follow-up question."""
-            
-            user_prompt = f"""Previous context:
-{context}
-
-New question: {follow_up_question}
-
-Instructions for answering the follow-up question:
-1. FOCUS SPECIFICALLY on answering the new question asked, using the documents as reference
-2. CITE SPECIFIC DOCUMENTS AND SECTIONS that support your answer (e.g., "According to the Title Register, section X...")
-3. If the question cannot be answered with the available documents, explicitly state this
-4. If there are any risks or concerns related to the question, highlight them
-5. If additional documentation or professional advice would be helpful, recommend it
-6. Consider any relevant information from the previous analysis and Q&A history
-
-Format your response in these sections:
-1. ANSWER SUMMARY
-- Direct answer to the question
-- Key documents referenced
-- Confidence level in the answer (High/Medium/Low) with explanation
-
-2. DETAILED EXPLANATION
-- Supporting evidence from documents (with specific citations)
-- Analysis of any ambiguities or uncertainties
-- Related risks or concerns
-
-3. RECOMMENDATIONS
-- Additional documentation needed (if any)
-- Professional advice recommended (if any)
-- Next steps or actions to consider"""
-
             try:
-                logger.info("Sending follow-up question to Claude")
                 response = client.messages.create(
                     model="claude-3-sonnet-20240229",
-                    max_tokens=max_output_tokens,
+                    max_tokens=4096,
                     system=system_prompt,
                     messages=[{
                         "role": "user",
-                        "content": f"Documents to analyze:\n{documents_text}\n\n{user_prompt}"
+                        "content": f"Context:\n{context}\n\nDocuments analyzed:\n{combined_analysis}\n\nQuestion: {follow_up_question}"
                     }],
                     temperature=0
                 )
-                logger.info("Successfully received response from Claude for follow-up")
                 return response.content[0].text
             except Exception as api_error:
                 logger.error(f"Claude API error during follow-up: {str(api_error)}")
-                logger.error(f"API error type: {type(api_error)}")
-                logger.error(f"API error details: {api_error.__dict__}")
                 raise ValueError(f"Failed to get answer from Claude API: {str(api_error)}")
+                
+    except Exception as e:
+        logger.error(f"Error in analyze_with_claude: {str(e)}")
+        raise
+    finally:
+        # Clean up
+        gc.collect()
 
-        else:
-            system_prompt = """You are an expert conveyancer analyzing a legal pack for an auction property. Your task is to provide a comprehensive analysis of all the legal documents provided, with special focus on identifying potential risks and issues."""
-            
-            user_prompt = f"""As a conveyancer, thoroughly analyze this legal pack for an auction property. Your analysis should be comprehensive and focus on identifying ALL potential risks and important information.
-
-Key Instructions:
-1. READ AND ANALYZE EVERY DOCUMENT THOROUGHLY
-2. Do not skip or skim any documents
-3. Pay special attention to:
-   - Hidden risks or potential issues
-   - Environmental concerns (including radon, contamination, flooding)
-   - Legal restrictions or covenants
-   - Financial obligations
-   - Development constraints
-   - Risks to a development of a house of multiple occupation 
-   - Outstanding liens, legal issues, or restrictions
-   - Electricity pylons
-   - Mining shafts
-   - Past mining activity
-   - Non standard construction
-   - Limited/no title guarantee
-   - Non removed financial charges
-   - Restrictive covenants
-   - Auction fees
-   - Seller legal costs
-   - Tenants in situ with problematic contracts
-   - Probate sale without authorizations
-   - Subsidence from past land activity
-   - Non regulated past building work
-   - Japanese knotweed   
-4. If you find conflicting information between documents, highlight this
-5. If critical information appears to be missing, explicitly note this
+def process_document_batch(document_batch, client):
+    """Process a batch of documents with Claude."""
+    try:
+        system_prompt = """You are an expert conveyancer analyzing a legal pack for an auction property. Analyze this batch of documents and identify key risks and important information."""
+        
+        user_prompt = """Analyze these legal pack documents, focusing on:
+1. Key risks and issues
+2. Legal restrictions or covenants
+3. Financial obligations
+4. Development constraints
+5. Environmental concerns
+6. Missing critical information
 
 Format your response in these sections:
+1. DOCUMENT SUMMARY
+2. KEY FINDINGS AND RISKS
+3. IMPORTANT INFORMATION"""
 
-1. EXECUTIVE SUMMARY
-- Brief overview of the property
-- Top 3-5 most significant findings (good or bad)
-- Overall risk assessment (Low/Medium/High) with explanation
-
-2. KEY FINDINGS
-For each finding:
-- Document source: [Name of document]
-- Finding: [Clear description]
-- Risk Level: [Low/Medium/High]
-- Implications: [What this means for the buyer]
-- Recommended Action: [What the buyer should do about this]
-
-3. DETAILED ANALYSIS
-Group findings by category:
-- Legal Status & Restrictions
-- Physical Property Condition
-- Environmental Factors
-- Financial Obligations
-- Development Potential
-- Local Area Considerations
-
-4. MISSING INFORMATION
-List any important information that appears to be missing from the legal pack
-
-5. RECOMMENDATIONS
-- Immediate actions needed
-- Further investigations required
-- Professional services needed
-- Questions to ask the seller/agent"""
-
-            try:
-                logger.info("Sending initial analysis request to Claude")
-                response = client.messages.create(
-                    model="claude-3-sonnet-20240229",
-                    max_tokens=max_output_tokens,
-                    system=system_prompt,
-                    messages=[{
-                        "role": "user",
-                        "content": f"Documents to analyze:\n{documents_text}\n\n{user_prompt}"
-                    }],
-                    temperature=0
-                )
-                logger.info("Successfully received response from Claude")
-                return response.content[0].text
-            except Exception as api_error:
-                logger.error(f"Claude API error during initial analysis: {str(api_error)}")
-                logger.error(f"API error type: {type(api_error)}")
-                logger.error(f"API error details: {api_error.__dict__}")
-                raise ValueError(f"Failed to get analysis from Claude API: {str(api_error)}")
-
-        if not response:
-            raise ValueError("Empty response from Claude")
-            
-        logger.info(f"Received analysis of length: {len(response)}")
+        response = client.messages.create(
+            model="claude-3-sonnet-20240229",
+            max_tokens=4096,
+            system=system_prompt,
+            messages=[{
+                "role": "user",
+                "content": f"Documents to analyze:\n{''.join(document_batch)}\n\n{user_prompt}"
+            }],
+            temperature=0
+        )
         
-        # Update token summary with prompt tokens
-        token_summary['prompt_tokens'] = total_tokens
-        
-        # Return appropriate key based on whether this is a follow-up or initial analysis
-        if follow_up_question:
-            return {
-                'answer': response,
-                'token_usage': token_summary
-            }
-        else:
-            return {
-                'analysis': response,
-                'token_usage': token_summary
-            }
-        
+        return response.content[0].text if response else None
     except Exception as e:
-        error_msg = f"Error in analyze_with_claude: {str(e)}"
-        logger.error(error_msg)
-        if token_summary:
-            logger.error(f"Token summary at error: {token_summary}")
-        raise ValueError(error_msg)
+        logger.error(f"Error processing document batch: {str(e)}")
+        return None
+    finally:
+        # Clean up batch memory
+        document_batch.clear()
+        gc.collect()
 
 def process_document_async(doc_id):
     """Process document in background."""
@@ -854,14 +773,25 @@ def process_document_async(doc_id):
                     chunk_text = []
                     
                     for page_num in range(start_page, end_page):
+                        app.logger.info(f"Processing page {page_num+1}/{total_pages}")
                         page = pdf_reader.pages[page_num]
                         page_text = page.extract_text().strip()
                         
                         if not page_text or len(page_text) < 100:
-                            images = convert_from_path(file_path, first_page=page_num+1, last_page=page_num+1)
-                            if images:
-                                page_text = process_scanned_page(images[0])
-                                del images
+                            app.logger.info(f"Page {page_num+1} has insufficient text ({len(page_text)} chars), attempting OCR")
+                            try:
+                                images = convert_from_path(file_path, first_page=page_num+1, last_page=page_num+1)
+                                if images:
+                                    app.logger.info(f"Successfully converted page {page_num+1} to image, starting OCR")
+                                    page_text = process_scanned_page(images[0])
+                                    app.logger.info(f"OCR completed for page {page_num+1}, extracted {len(page_text)} chars")
+                                    del images
+                                else:
+                                    app.logger.warning(f"No images extracted from page {page_num+1}")
+                            except Exception as e:
+                                app.logger.error(f"Error during OCR for page {page_num+1}: {str(e)}")
+                        else:
+                            app.logger.info(f"Successfully extracted {len(page_text)} chars from page {page_num+1} using PyPDF2")
                         
                         chunk_text.append(page_text)
                         document.processed_pages = page_num + 1
@@ -870,9 +800,10 @@ def process_document_async(doc_id):
                     
                     text_chunks.extend(chunk_text)
                     gc.collect()
+                    app.logger.info(f"Completed batch {start_page+1}-{end_page}, total content length: {sum(len(t) for t in chunk_text)}")
                     
                 except Exception as e:
-                    app.logger.error(f"Error processing pages {start_page}-{end_page}: {str(e)}")
+                    app.logger.error(f"Error processing pages {start_page+1}-{end_page}: {str(e)}")
                     continue
         
         document.text_content = "\n".join(text_chunks)
@@ -928,7 +859,7 @@ def process_documents(file_paths, follow_up=False):
                 current_chunk = []
                 current_chunk_tokens = 0
                 
-                # Force garbage collection after processing chunk
+                # Force garbage collection
                 gc.collect()
             
             # If single document is too large, split it
