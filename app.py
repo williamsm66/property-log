@@ -28,6 +28,7 @@ from google.cloud import documentai_v1 as documentai
 from datetime import timedelta  # Import timedelta for viewing schedule
 import gc  # Import garbage collector
 from threading import Thread
+import psutil
 
 # Initialize Flask app first
 app = Flask(__name__)
@@ -337,36 +338,52 @@ def extract_text_from_pdf(file_path):
             BATCH_SIZE = 10
             MAX_PAGES = 50  # Maximum total pages to process
             
-            for batch_start in range(0, total_pages, BATCH_SIZE):
+            for batch_start in range(0, min(total_pages, MAX_PAGES), BATCH_SIZE):
                 try:
-                    end_page = min(batch_start + BATCH_SIZE, total_pages)
+                    end_page = min(batch_start + BATCH_SIZE, total_pages, MAX_PAGES)
                     batch_text = []
+                    app.logger.info(f"Processing batch of pages {batch_start+1} to {end_page}")
                     
                     for page_num in range(batch_start, end_page):
+                        app.logger.info(f"Processing page {page_num+1}/{total_pages}")
                         page = pdf_reader.pages[page_num]
                         page_text = page.extract_text().strip()
                         
                         if not page_text or len(page_text) < 100:
-                            images = convert_from_path(file_path, first_page=page_num+1, last_page=page_num+1)
-                            if images:
-                                page_text = process_scanned_page(images[0])
-                                del images
+                            app.logger.info(f"Page {page_num+1} has insufficient text ({len(page_text)} chars), attempting OCR")
+                            try:
+                                images = convert_from_path(file_path, first_page=page_num+1, last_page=page_num+1)
+                                if images:
+                                    app.logger.info(f"Successfully converted page {page_num+1} to image, starting OCR")
+                                    page_text = process_scanned_page(images[0])
+                                    app.logger.info(f"OCR completed for page {page_num+1}, extracted {len(page_text)} chars")
+                                    del images
+                                else:
+                                    app.logger.warning(f"No images extracted from page {page_num+1}")
+                            except Exception as e:
+                                app.logger.error(f"Error during OCR for page {page_num+1}: {str(e)}")
+                        else:
+                            app.logger.info(f"Successfully extracted {len(page_text)} chars from page {page_num+1} using PyPDF2")
                         
                         batch_text.append(page_text)
                         gc.collect()
+                        app.logger.info(f"Memory usage after page {page_num+1}: {psutil.Process().memory_info().rss / 1024 / 1024:.2f} MB")
                     
                     text_content.extend(batch_text)
                     gc.collect()
+                    app.logger.info(f"Completed batch {batch_start+1}-{end_page}, total content length: {sum(len(t) for t in batch_text)}")
                     
                 except Exception as e:
-                    app.logger.error(f"Error processing pages {batch_start}-{end_page}: {str(e)}")
+                    app.logger.error(f"Error processing pages {batch_start+1}-{end_page}: {str(e)}")
                     continue
         
         if total_pages > MAX_PAGES:
             app.logger.warning(f"PDF has {total_pages} pages, but only processed first {MAX_PAGES} pages")
             text_content.append(f"\n[Note: Only the first {MAX_PAGES} pages were processed due to size limits]")
         
-        return "\n".join(text_content)
+        final_text = "\n".join(text_content)
+        app.logger.info(f"PDF extraction completed. Total content length: {len(final_text)}")
+        return final_text
             
     except Exception as e:
         app.logger.error(f"Error in PDF extraction: {str(e)}")

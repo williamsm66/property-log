@@ -1,7 +1,39 @@
+import multiprocessing
+import logging
+
+logger = logging.getLogger('gunicorn.error')
+
+# Server socket
+bind = '0.0.0.0:10000'
+backlog = 2048
+
+# Worker processes
+workers = multiprocessing.cpu_count() * 2 + 1
+worker_class = 'sync'
+worker_connections = 1000
+timeout = 300  # Increase timeout to 5 minutes
+graceful_timeout = 120
+keepalive = 2
+
+# Process naming
+proc_name = 'property-log'
+
 # Logging
 accesslog = '-'
 errorlog = '-'
 loglevel = 'info'
+
+# Server mechanics
+daemon = False
+pidfile = None
+umask = 0
+user = None
+group = None
+tmp_upload_dir = None
+
+# SSL
+keyfile = None
+certfile = None
 
 def on_starting(server):
     """Log when Gunicorn starts."""
